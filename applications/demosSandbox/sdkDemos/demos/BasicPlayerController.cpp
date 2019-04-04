@@ -10,9 +10,8 @@
 */
 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
-#include "NewtonDemos.h"
 #include "PhysicsUtils.h"
 #include "TargaToOpenGl.h"
 #include "DemoMesh.h"
@@ -34,6 +33,7 @@ class BasicPlayerEntity: public DemoEntity
 		InputRecord()
 		{
 			memset (this, 0, sizeof (InputRecord));
+			m_cameraMode = 1;
 		}
 		
 		dFloat m_headinAngle;
@@ -86,7 +86,7 @@ class BasicPlayerEntity: public DemoEntity
 
 		// create the visual mesh from the player collision shape
 		NewtonCollision* const collision = NewtonBodyGetCollision(body);
-		DemoMesh* const geometry = new DemoMesh("player", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+		DemoMesh* const geometry = new DemoMesh("player", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga");
 		SetMesh(geometry, dGetIdentityMatrix());
 		geometry->Release(); 
 	}
@@ -148,8 +148,6 @@ class BasicPlayerControllerManager: public dCustomPlayerControllerManager
 	}
 };
 
-
-
 // we recommend using and input manage to control input for all games
 class BasicPlayerInputManager: public dCustomInputManager
 {
@@ -160,12 +158,11 @@ class BasicPlayerInputManager: public dCustomInputManager
 		,m_player(NULL)
 		,m_jumpKey(false)
 		,m_cameraMode(true)
-		,m_helpKey(true)
 		,m_shootProp(false)
 		,m_shootState(0)
 	{
 		// plug a callback for 2d help display
-		scene->Set2DDisplayRenderFunction (RenderPlayerHelp, this);
+		scene->Set2DDisplayRenderFunction (RenderPlayerHelp, NULL, this);
 	}
 
 	void SpawnRandomProp(const dMatrix& location) const
@@ -181,7 +178,7 @@ class BasicPlayerInputManager: public dCustomInputManager
 
 		dVector size (0.35f, 0.25f, 0.25f, 0.0f);
 		NewtonCollision* const collision = CreateConvexCollision (world, dGetIdentityMatrix(), size, type, 0);
-		DemoMesh* const geometry = new DemoMesh("prop", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+		DemoMesh* const geometry = new DemoMesh("prop", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga");
 
 		dMatrix matrix (location);
 		matrix.m_posit.m_y += 0.5f;
@@ -199,20 +196,21 @@ class BasicPlayerInputManager: public dCustomInputManager
 
 	void OnBeginUpdate (dFloat timestepInSecunds)
 	{
+//		dAssert(0);
+		/*
 		BasicPlayerEntity::InputRecord inputs;
 
 		DemoCamera* const camera = m_scene->GetCamera();
-		NewtonDemos* const mainWindow = m_scene->GetRootWindow();
 
 		// set the help key
-		m_helpKey.UpdatePushButton (mainWindow, 'H');
+		m_helpKey.UpdatePushButton (m_scene, 'H');
 
 		// read the player inputs
 		inputs.m_headinAngle = camera->GetYawAngle();
-		inputs.m_cameraMode = m_cameraMode.UpdatePushButton(m_scene->GetRootWindow(), 'C') ? 1 : 0;
-		inputs.m_forwarSpeed = (int (mainWindow->GetKeyState ('W')) - int (mainWindow->GetKeyState ('S'))) * PLAYER_WALK_SPEED;
-		inputs.m_strafeSpeed = (int (mainWindow->GetKeyState ('D')) - int (mainWindow->GetKeyState ('A'))) * PLAYER_WALK_SPEED;
-		inputs.m_jumpSpeed = (m_jumpKey.UpdateTriggerButton(mainWindow, ' ')) ? PLAYER_JUMP_SPEED : 0.0f;
+		inputs.m_cameraMode = m_cameraMode.UpdatePushButton(m_scene, 'C') ? 1 : 0;
+		inputs.m_forwarSpeed = (int (m_scene->GetKeyState ('W')) - int (m_scene->GetKeyState ('S'))) * PLAYER_WALK_SPEED;
+		inputs.m_strafeSpeed = (int (m_scene->GetKeyState ('D')) - int (m_scene->GetKeyState ('A'))) * PLAYER_WALK_SPEED;
+		inputs.m_jumpSpeed = (m_jumpKey.UpdateTriggerButton(m_scene, ' ')) ? PLAYER_JUMP_SPEED : 0.0f;
 
 		// normalize player speed
 		dFloat mag2 = inputs.m_forwarSpeed * inputs.m_forwarSpeed + inputs.m_strafeSpeed * inputs.m_strafeSpeed;
@@ -223,7 +221,7 @@ class BasicPlayerInputManager: public dCustomInputManager
 		}
 
 		// see if we are shotting some props
-		m_shootState = m_shootProp.UpdateTriggerButton(mainWindow, 0x0d) ? 1 : 0;
+		m_shootState = m_shootProp.UpdateTriggerButton(m_scene, 0x0d) ? 1 : 0;
 
 
 #if 0
@@ -242,6 +240,7 @@ class BasicPlayerInputManager: public dCustomInputManager
 #endif
 
 		m_player->SetInput(inputs);
+*/
 	}
 
 	void OnEndUpdate (dFloat timestepInSecunds)
@@ -282,27 +281,25 @@ class BasicPlayerInputManager: public dCustomInputManager
 		m_player = player;
 	}
 
-	void RenderPlayerHelp (DemoEntityManager* const scene, int lineNumber) const
+	void RenderPlayerHelp (DemoEntityManager* const scene) const
 	{
-		if (m_helpKey.GetPushButtonState()) {
-			dVector color(1.0f, 1.0f, 0.0f, 0.0f);
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "Navigation Keys");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "walk forward:            W");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "walk backward:           S");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "strafe right:            D");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "strafe left:             A");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "toggle camera mode:      C");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "jump:                    Space");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "hide help:               H");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "change player direction: Left mouse button");
-		}
+		dVector color(1.0f, 1.0f, 0.0f, 0.0f);
+		scene->Print (color, "Navigation Keys");
+		scene->Print (color, "walk forward:            W");
+		scene->Print (color, "walk backward:           S");
+		scene->Print (color, "strafe right:            D");
+		scene->Print (color, "strafe left:             A");
+		scene->Print (color, "toggle camera mode:      C");
+		scene->Print (color, "jump:                    Space");
+		scene->Print (color, "hide help:               H");
+		scene->Print (color, "change player direction: Left mouse button");
 	}
 
 
-	static void RenderPlayerHelp (DemoEntityManager* const scene, void* const context, int lineNumber)
+	static void RenderPlayerHelp (DemoEntityManager* const scene, void* const context)
 	{
 		BasicPlayerInputManager* const me = (BasicPlayerInputManager*) context;
-		me->RenderPlayerHelp (scene, lineNumber);
+		me->RenderPlayerHelp (scene);
 	}
 
 
@@ -310,7 +307,6 @@ class BasicPlayerInputManager: public dCustomInputManager
 	BasicPlayerEntity* m_player;
 	DemoEntityManager::ButtonKey m_jumpKey;
 	DemoEntityManager::ButtonKey m_cameraMode;
-	DemoEntityManager::ButtonKey m_helpKey;
 	DemoEntityManager::ButtonKey m_shootProp;
 
 	int m_shootState;
@@ -322,9 +318,9 @@ void BasicPlayerController (DemoEntityManager* const scene)
 	// load the sky box
 	scene->CreateSkyBox();
 
-	//CreateLevelMesh (scene, "flatPlane.ngd", true);
+	CreateLevelMesh (scene, "flatPlane.ngd", true);
 	//CreateLevelMesh (scene, "playground.ngd", true);
-	CreateLevelMesh (scene, "castle.ngd", true);
+	//CreateLevelMesh (scene, "castle.ngd", true);
 	//CreateLevelMesh (scene, "sponza.ngd", true);
 	//CreateLevelMesh (scene, "sibenik.ngd", true);
 
@@ -355,7 +351,8 @@ void BasicPlayerController (DemoEntityManager* const scene)
 	int defaultMaterialID = NewtonMaterialGetDefaultGroupID (scene->GetNewton());
 	location.m_posit.m_x += 5.0f;
 	dVector size (2.0f, 2.0f, 2.0f, 0.0f);
-	int count = 1;
+
+	int count = 0;
 	dMatrix shapeOffsetMatrix (dGetIdentityMatrix());
 	AddPrimitiveArray(scene, 100.0f, location.m_posit, size, count, count, 5.0f, _BOX_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix, 10.0f);
 

@@ -9,17 +9,96 @@
 * freely
 */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "DemoMesh.h"
 #include "DemoEntity.h"
 #include "PhysicsUtils.h"
 #include "DemoEntityManager.h"
 #include "OpenGlUtil.h"
 #include "DebugDisplay.h"
-
+#include "dHighResolutionTimer.h"
 
 //const D_MESH_HEADER	"Newton Mesh"
 static const char* D_MESH_HEADER = "Newton Mesh";
+
+
+class dMousePickClass
+{
+	public:
+	dMousePickClass ()
+		:m_normal(0.0f)
+		,m_param (1.0f)
+		,m_body(NULL)
+	{
+		m_hitBody = false;
+	}
+
+	// implement a ray cast pre-filter
+	static unsigned RayCastPrefilter (const NewtonBody* body,  const NewtonCollision* const collision, void* const userData)
+	{
+		// ray cannot pick trigger volumes
+		//return NewtonCollisionIsTriggerVolume(collision) ? 0 : 1;
+
+		const NewtonCollision* const parent = NewtonCollisionGetParentInstance(collision);
+		if (parent) {
+			// you can use this to filter sub collision shapes.  
+			dAssert (NewtonCollisionGetSubCollisionHandle (collision));
+		}
+
+		return (NewtonBodyGetType(body) == NEWTON_DYNAMIC_BODY) ? 1 : 0;
+	}
+
+	static bool GetLastHit (dVector& posit, dVector& normal) 
+	{
+		posit = m_lastPoint;
+		normal = m_lastNormal;
+		return m_hitBody;
+	}
+
+	static dFloat RayCastFilter (const NewtonBody* const body, const NewtonCollision* const collisionHit, const dFloat* const contact, const dFloat* const normal, dLong collisionID, void* const userData, dFloat intersetParam)
+	{
+		dFloat mass;
+		dFloat Ixx;
+		dFloat Iyy;
+		dFloat Izz;
+
+		// check if we are hitting a sub shape
+		const NewtonCollision* const parent = NewtonCollisionGetParentInstance(collisionHit);
+		if (parent) {
+			// you can use this to filter sub collision shapes.  
+			dAssert (NewtonCollisionGetSubCollisionHandle (collisionHit));
+		}
+
+		dMousePickClass* const data = (dMousePickClass*) userData;
+		NewtonBodyGetMass (body, &mass, &Ixx, &Iyy, &Izz);
+		if ((mass > 0.0f) || (NewtonBodyGetType(body) == NEWTON_KINEMATIC_BODY)) {
+			data->m_body = body;
+		}
+
+		if (intersetParam < data->m_param) {
+			data->m_param = intersetParam;
+			data->m_normal = dVector (normal[0], normal[1], normal[2]);
+		}
+
+		return intersetParam;
+	}
+
+	dVector m_normal;
+	dFloat m_param;
+	const NewtonBody* m_body;
+	static bool m_hitBody;
+	static dVector m_lastPoint;
+	static dVector m_lastNormal;
+};
+
+bool dMousePickClass::m_hitBody;
+dVector dMousePickClass::m_lastPoint;
+dVector dMousePickClass::m_lastNormal;
+
+bool GetLastHit (dVector& posit, dVector& normal)
+{
+	return dMousePickClass::GetLastHit(posit, normal);
+}
 
 dVector ForceBetweenBody (NewtonBody* const body0, NewtonBody* const body1)
 {
@@ -54,8 +133,16 @@ void GetConnectedBodiesByJoints (NewtonBody* const body)
 	}
 }
 	
-
-
+class RayCastPlacementData
+{
+	public:
+	RayCastPlacementData()
+		:m_param(1.2f)
+	{
+	}
+	dVector m_normal;
+	dFloat m_param;
+};
 
 static dFloat RayCastPlacement (const NewtonBody* const body, const NewtonCollision* const collisionHit, const dFloat* const contact, const dFloat* const normal, dLong collisionID, void* const userData, dFloat intersetParam)
 {
@@ -66,14 +153,13 @@ static dFloat RayCastPlacement (const NewtonBody* const body, const NewtonCollis
 		dAssert (NewtonCollisionGetSubCollisionHandle (collisionHit));
 	}
 
-
-	dFloat* const paramPtr = (dFloat*)userData;
-	if (intersetParam < paramPtr[0]) {
-		paramPtr[0] = intersetParam;
+	RayCastPlacementData* const paramPtr = (RayCastPlacementData*)userData;
+	if (intersetParam < paramPtr->m_param) {
+		paramPtr->m_param = intersetParam;
+		paramPtr->m_normal = dVector(normal[0], normal[1], normal[2], 0.0f); 
 	}
-	return paramPtr[0];
+	return paramPtr->m_param;
 }
-
 
 static unsigned RayPrefilter (const NewtonBody* const body, const NewtonCollision* const collision, void* const userData)
 {
@@ -87,16 +173,19 @@ static unsigned RayPrefilter (const NewtonBody* const body, const NewtonCollisio
 	return 1;
 }
 
-dVector FindFloor (const NewtonWorld* world, const dVector& origin, dFloat dist)
+dVector FindFloor (const NewtonWorld* world, const dVector& origin, dFloat dist, dVector* const normal)
 {
 	// shot a vertical ray from a high altitude and collect the intersection parameter.
 	dVector p0 (origin); 
 	dVector p1 (origin - dVector (0.0f, dAbs (dist), 0.0f, 0.0f)); 
 
-	dFloat parameter = 1.2f;
+	RayCastPlacementData parameter;
 	NewtonWorldRayCast (world, &p0[0], &p1[0], RayCastPlacement, &parameter, RayPrefilter, 0);
-	if (parameter < 1.0f) {
-		p0 -= dVector (0.0f, dAbs (dist) * parameter, 0.0f, 0.0f);
+	if (parameter.m_param < 1.0f) {
+		p0 -= dVector (0.0f, dAbs (dist) * parameter.m_param, 0.0f, 0.0f);
+		if (normal) {
+			*normal = parameter.m_normal;
+		}
 	}
 	return p0;
 }
@@ -508,7 +597,7 @@ void GetContactOnBody (NewtonBody* const body)
 		NewtonBody* const body0 = NewtonJointGetBody0(joint);
 		NewtonBody* const body1 = NewtonJointGetBody1(joint);
 		for (void* contact = NewtonContactJointGetFirstContact (joint); contact; contact = NewtonContactJointGetNextContact (joint, contact)) {
-			NewtonMaterial* material = NewtonContactGetMaterial (contact);
+			NewtonMaterial* const material = NewtonContactGetMaterial (contact);
 
 			//dFloat forceMag;
 			dVector point(0.0f);
@@ -535,7 +624,6 @@ void  PhysicsBodyDestructor (const NewtonBody* body)
 	//	delete primitive;
 }
 
-
 // add force and torque to rigid body
 void  PhysicsApplyGravityForce (const NewtonBody* body, dFloat timestep, int threadIndex)
 {
@@ -545,12 +633,12 @@ void  PhysicsApplyGravityForce (const NewtonBody* body, dFloat timestep, int thr
 	dFloat mass;
 
 	NewtonBodyGetMass (body, &mass, &Ixx, &Iyy, &Izz);
-//mass*= 0.0f;
-
-	dVector force (dVector (0.0f, 1.0f, 0.0f).Scale (mass * DEMO_GRAVITY));
+	dVector dir(0.0f, 1.0f, 0.0f);
+//	dVector dir(1.0f, 0.0f, 0.0f);
+//mass = 0.0f;
+	dVector force (dir.Scale (mass * DEMO_GRAVITY));
 	NewtonBodySetForce (body, &force.m_x);
 }
-
 
 void GenericContactProcess (const NewtonJoint* contactJoint, dFloat timestep, int threadIndex)
 {
@@ -637,7 +725,7 @@ void GenericContactProcess (const NewtonJoint* contactJoint, dFloat timestep, in
 
 
 
-NewtonCollision* CreateConvexCollision (NewtonWorld* world, const dMatrix& srcMatrix, const dVector& originalSize, PrimitiveType type, int materialID__)
+NewtonCollision* CreateConvexCollision (NewtonWorld* const world, const dMatrix& srcMatrix, const dVector& originalSize, PrimitiveType type, int materialID__)
 {
 	dVector size (originalSize);
 
@@ -714,9 +802,9 @@ NewtonCollision* CreateConvexCollision (NewtonWorld* world, const dMatrix& srcMa
 			int count = 6;
 			// populate the cloud with pseudo Gaussian random points
 			for (int i = 6; i < SAMPLE_COUNT; i ++) {
-				cloud [i].m_x = dRandomVariable(size.m_x);
-				cloud [i].m_y = dRandomVariable(size.m_y);
-				cloud [i].m_z = dRandomVariable(size.m_z);
+				cloud [i].m_x = dGaussianRandom (size.m_x);
+				cloud [i].m_y = dGaussianRandom (size.m_y);
+				cloud [i].m_z = dGaussianRandom (size.m_z);
 				count ++;
 			}
 			collision = NewtonCreateConvexHull (world, count, &cloud[0].m_x, sizeof (dVector), 0.01f, 0, NULL); 
@@ -735,7 +823,7 @@ NewtonCollision* CreateConvexCollision (NewtonWorld* world, const dMatrix& srcMa
 			dFloat radius = size.m_y;
 			dFloat height = size.m_x * 0.999f;
 			dFloat x = - height * 0.5f;
-			dMatrix rotation (dPitchMatrix(2.0f * 3.141592f / STEPS_HULL));
+			dMatrix rotation (dPitchMatrix(2.0f * dPi / STEPS_HULL));
 			for (int i = 0; i < 4; i ++) {
 				dFloat pad = ((i == 1) || (i == 2)) * 0.25f * radius;
 				dVector p (x, 0.0f, radius + pad);
@@ -758,7 +846,7 @@ NewtonCollision* CreateConvexCollision (NewtonWorld* world, const dMatrix& srcMa
 		case _COMPOUND_CONVEX_CRUZ_PRIMITIVE:
 		{
 			//dMatrix matrix (GetIdentityMatrix());
-			dMatrix matrix (dPitchMatrix(15.0f * 3.1416f / 180.0f) * dYawMatrix(15.0f * 3.1416f / 180.0f) * dRollMatrix(15.0f * 3.1416f / 180.0f));
+			dMatrix matrix (dPitchMatrix(15.0f * dDegreeToRad) * dYawMatrix(15.0f * dDegreeToRad) * dRollMatrix(15.0f * dDegreeToRad));
 
 			matrix.m_posit = dVector (size.m_x * 0.5f, 0.0f, 0.0f, 1.0f);
 			NewtonCollision* const collisionA = NewtonCreateBox (world, size.m_x, size.m_x * 0.25f, size.m_x * 0.25f, 0, &matrix[0][0]); 
@@ -796,7 +884,7 @@ NewtonCollision* CreateConvexCollision (NewtonWorld* world, const dMatrix& srcMa
 	return collision;
 }
 
-NewtonBody* CreateSimpleBody (NewtonWorld* const world, void* const userData, dFloat mass, const dMatrix& matrix, NewtonCollision* const collision, int materialId)
+NewtonBody* CreateSimpleBody (NewtonWorld* const world, void* const userData, dFloat mass, const dMatrix& matrix, NewtonCollision* const collision, int materialId, bool generalInertia)
 {
 
 	// calculate the moment of inertia and the relative center of mass of the solid
@@ -808,7 +896,7 @@ NewtonBody* CreateSimpleBody (NewtonWorld* const world, void* const userData, dF
 	//	dFloat Izz = mass * inertia[2];
 
 	//create the rigid body
-	NewtonBody* const rigidBody = NewtonCreateDynamicBody (world, collision, &matrix[0][0]);
+	NewtonBody* const rigidBody = generalInertia ? NewtonCreateAsymetricDynamicBody (world, collision, &matrix[0][0]) : NewtonCreateDynamicBody(world, collision, &matrix[0][0]);
 
 	// set the correct center of gravity for this body (these function are for legacy)
 	//	NewtonBodySetCentreOfMass (rigidBody, &origin[0]);
@@ -847,7 +935,7 @@ NewtonBody* CreateSimpleBody (NewtonWorld* const world, void* const userData, dF
 	return rigidBody;
 }
 
-NewtonBody* CreateSimpleSolid (DemoEntityManager* const scene, DemoMesh* const mesh, dFloat mass, const dMatrix& matrix, NewtonCollision* const collision, int materialId)
+NewtonBody* CreateSimpleSolid (DemoEntityManager* const scene, DemoMesh* const mesh, dFloat mass, const dMatrix& matrix, NewtonCollision* const collision, int materialId, bool generalInertia)
 {
 	dAssert (collision);
 
@@ -857,10 +945,8 @@ NewtonBody* CreateSimpleSolid (DemoEntityManager* const scene, DemoMesh* const m
 	if (mesh) {
 		entity->SetMesh(mesh, dGetIdentityMatrix());
 	}
-	return CreateSimpleBody (scene->GetNewton(), entity, mass, matrix, collision, materialId);
+	return CreateSimpleBody (scene->GetNewton(), entity, mass, matrix, collision, materialId, generalInertia);
 }
-
-
 
 void AddPrimitiveArray (DemoEntityManager* const scene, dFloat mass, const dVector& origin, const dVector& size, int xCount, int zCount, dFloat spacing, PrimitiveType type, int materialID, const dMatrix& shapeOffsetMatrix, dFloat startElevation, dFloat offsetHigh)
 {
@@ -871,7 +957,7 @@ void AddPrimitiveArray (DemoEntityManager* const scene, dFloat mass, const dVect
 	// test collision mode
 	//NewtonCollisionSetCollisonMode(collision, 0);
 
-	DemoMesh* const geometry = new DemoMesh("primitive", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+	DemoMesh* const geometry = new DemoMesh("primitive", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga");
 
 	dMatrix matrix (dGetIdentityMatrix());
 	for (int i = 0; i < xCount; i ++) {
@@ -883,7 +969,9 @@ void AddPrimitiveArray (DemoEntityManager* const scene, dFloat mass, const dVect
 			matrix.m_posit.m_z = z;
 			dVector floor (FindFloor (world, dVector (matrix.m_posit.m_x, startElevation, matrix.m_posit.m_z, 0.0f), 2.0f * startElevation));
 			matrix.m_posit.m_y = floor.m_y + size.m_y * 0.5f + offsetHigh;
-			CreateSimpleSolid (scene, geometry, mass, matrix, collision, materialID);
+			if (matrix.m_posit.m_y < 900.0f) {
+				CreateSimpleSolid(scene, geometry, mass, matrix, collision, materialID);
+			}
 		}
 	}
 	// do not forget to release the assets	
@@ -911,7 +999,6 @@ void CalculateAABB (const NewtonCollision* const collision, const dMatrix& matri
 	}
 }
 
-
 void SetAutoSleepMode (NewtonWorld* const world, int mode)
 {
 	mode = mode ? 0 : 1;
@@ -919,7 +1006,6 @@ void SetAutoSleepMode (NewtonWorld* const world, int mode)
 		NewtonBodySetAutoSleep (body, mode);
 	}
 }
-
 
 class CollsionTreeFaceMap
 {
@@ -970,7 +1056,7 @@ class CollsionTreeFaceMap
 };
 
 
-NewtonCollision* CreateCollisionTree (NewtonWorld* world, DemoEntity* const entity, int materialID, bool optimize)
+NewtonCollision* CreateCollisionTree (NewtonWorld* const world, DemoEntity* const entity, int materialID, bool optimize)
 {
 	// measure the time to build a collision tree
 	unsigned64 timer0 = dGetTimeInMicrosenconds();
@@ -1047,6 +1133,11 @@ NewtonBody* CreateLevelMeshBody (NewtonWorld* const world, DemoEntity* const ent
 	// create the level rigid body
 	NewtonBody* const level = NewtonCreateDynamicBody(world, collision, &matrix[0][0]);
 
+//NewtonCollision* const collision1 = NewtonCreateNull(world);
+//NewtonBody* const level = NewtonCreateDynamicBody(world, collision1, &matrix[0][0]);
+//NewtonBodySetCollision(level, collision);
+//NewtonDestroyCollision (collision1);
+
 	// save the pointer to the graphic object with the body.
 	NewtonBodySetUserData (level, ent);
 
@@ -1091,7 +1182,7 @@ NewtonBody* AddFloorBox(DemoEntityManager* const scene, const dVector& origin, c
 	// test collision mode
 	//NewtonCollisionSetCollisonMode(collision, 0);
 
-	DemoMesh* const geometry = new DemoMesh("primitive", collision, "wood_3.tga", "wood_3.tga", "wood_3.tga");
+	DemoMesh* const geometry = new DemoMesh("primitive", scene->GetShaderCache(), collision, "wood_3.tga", "wood_3.tga", "wood_3.tga");
 
 	dMatrix matrix(dGetIdentityMatrix());
 	matrix.m_posit = origin;
@@ -1102,8 +1193,6 @@ NewtonBody* AddFloorBox(DemoEntityManager* const scene, const dVector& origin, c
 	NewtonDestroyCollision(collision);
 	return body;
 }
-
-
 
 NewtonBody* CreateLevelMesh (DemoEntityManager* const scene, const char* const name, bool optimized)
 {
@@ -1131,62 +1220,30 @@ NewtonBody* CreateLevelMesh (DemoEntityManager* const scene, const char* const n
 }
 
 
-class MakeViualMesh: public dScene::dSceneExportCallback
+MakeViualMesh::MakeViualMesh (NewtonWorld* const world)
+	:m_world (world)
 {
-	public: 
-	MakeViualMesh (NewtonWorld* const world)
-		:m_world (world)
-	{
-	}
+}
 
-	NewtonMesh* CreateVisualMesh (NewtonBody* const body, char* const name, int maxNameSize) const
-	{
-		// here the use should take the user data from the body create newtonMesh form it and return that back
-		NewtonCollision* const collision = NewtonBodyGetCollision(body);
-		NewtonMesh* const mesh = NewtonMeshCreateFromCollision(collision);
-
-		sprintf (name, "visual Mesh");
-		return mesh;
-	}
-
-	NewtonWorld* m_world;
-};
-
-void ExportScene (NewtonWorld* const world, const char* const fileName)
+NewtonMesh* MakeViualMesh::CreateVisualMesh (NewtonBody* const body, char* const name, int maxNameSize) const
 {
+	// here the use should take the user data from the body create newtonMesh form it and return that back
+	NewtonCollision* const collision = NewtonBodyGetCollision(body);
+	NewtonMesh* const mesh = NewtonMeshCreateFromCollision(collision);
+	sprintf (name, "visual Mesh");
+	return mesh;
+}
+
+void ExportScene (NewtonWorld* const world, const char* const name)
+{
+	char fileName[2048];
+	dGetWorkingFileName(name, fileName);
+
 	MakeViualMesh context (world);
 	dScene testScene (world);
 	testScene.NewtonWorldToScene (world, &context);
 	testScene.Serialize (fileName);
 }
-
-/*
-NewtonMesh* LoadNewtonMesh (NewtonWorld* const world, const char* const name)
-{
-	DemoEntity entity (dGetIdentityMatrix(), NULL);
-	entity.LoadNGD_mesh(name, world);
-	DemoMeshInterface* const mesh = entity.GetMesh();
-	NewtonMesh* const newtonMesh = mesh->CreateNewtonMesh (world, dGetIdentityMatrix());
-	return newtonMesh;
-}
-
-void SaveNewtonMesh (NewtonMesh* const mesh, const char* const name)
-{
-	char fileName[2048];
-	GetWorkingFileName (name, fileName);
-	FILE* const file = fopen (fileName, "wb");
-	if (file) {
-		const char* const header = D_MESH_HEADER;
-		fwrite (header, strlen(D_MESH_HEADER), 1, file);
-
-		int size = strlen(name);
-		fwrite (&size, sizeof (int), 1, file);
-		fwrite (name, size, 1, file);
-		NewtonMeshSerialize (mesh, DemoEntityManager::SerializeFile, file);
-		fclose (file);
-	}
-}
-*/
 
 void CalculatePickForceAndTorque (const NewtonBody* const body, const dVector& pointOnBodyInGlobalSpace, const dVector& targetPositionInGlobalSpace, dFloat timestep)
 {
@@ -1222,4 +1279,106 @@ void CalculatePickForceAndTorque (const NewtonBody* const body, const dVector& p
 	linearMomentum = linearMomentum.Scale(mass * damping);
 
 	NewtonBodyApplyImpulsePair(body, &linearMomentum[0], &angularMomentum[0], timestep);
+}
+
+NewtonBody* MousePickBody (NewtonWorld* const nWorld, const dVector& origin, const dVector& end, dFloat& paramterOut, dVector& positionOut, dVector& normalOut)
+{
+	dMousePickClass rayCast;
+	NewtonWorldRayCast(nWorld, &origin[0], &end[0], dMousePickClass::RayCastFilter, &rayCast, dMousePickClass::RayCastPrefilter, 0);
+
+	if (rayCast.m_param < 1.0f) {
+		dMousePickClass::m_hitBody = true;
+		dMousePickClass::m_lastPoint = origin + (end - origin).Scale (rayCast.m_param);
+		dMousePickClass::m_lastNormal = rayCast.m_normal;
+	}
+
+	if (rayCast.m_body) {
+		positionOut = origin + (end - origin).Scale (rayCast.m_param);
+		normalOut = rayCast.m_normal;
+		paramterOut = rayCast.m_param;
+	}
+	return (NewtonBody*) rayCast.m_body;
+}
+
+
+void LoadLumberYardMesh(DemoEntityManager* const scene, const dVector& location, int shapeid)
+{
+	DemoEntity* const entity = DemoEntity::LoadNGD_mesh ("lumber.ngd", scene->GetNewton(), scene->GetShaderCache());
+
+	dTree<NewtonCollision*, DemoMesh*> filter;
+	NewtonWorld* const world = scene->GetNewton();
+
+	dFloat density = 15.0f;
+
+	int defaultMaterialID = NewtonMaterialGetDefaultGroupID(scene->GetNewton());
+	for (DemoEntity* child = entity->GetFirst(); child; child = child->GetNext()) {
+		DemoMesh* const mesh = (DemoMesh*)child->GetMesh();
+		if (mesh) {
+			dAssert(mesh->IsType(DemoMesh::GetRttiType()));
+			dTree<NewtonCollision*, DemoMesh*>::dTreeNode* node = filter.Find(mesh);
+			if (!node) {
+				// make a collision shape only for and instance
+				dFloat* const array = mesh->m_vertex;
+				dVector minBox(1.0e10f, 1.0e10f, 1.0e10f, 1.0f);
+				dVector maxBox(-1.0e10f, -1.0e10f, -1.0e10f, 1.0f);
+
+				for (int i = 0; i < mesh->m_vertexCount; i++) {
+					dVector p(array[i * 3 + 0], array[i * 3 + 1], array[i * 3 + 2], 1.0f);
+					minBox.m_x = dMin(p.m_x, minBox.m_x);
+					minBox.m_y = dMin(p.m_y, minBox.m_y);
+					minBox.m_z = dMin(p.m_z, minBox.m_z);
+
+					maxBox.m_x = dMax(p.m_x, maxBox.m_x);
+					maxBox.m_y = dMax(p.m_y, maxBox.m_y);
+					maxBox.m_z = dMax(p.m_z, maxBox.m_z);
+				}
+
+				dVector size(maxBox - minBox);
+				dMatrix offset(dGetIdentityMatrix());
+				offset.m_posit = (maxBox + minBox).Scale(0.5f);
+				NewtonCollision* const shape = NewtonCreateBox(world, size.m_x, size.m_y, size.m_z, shapeid, &offset[0][0]);
+				node = filter.Insert(shape, mesh);
+			}
+
+			// create a body and add to the world
+			NewtonCollision* const shape = node->GetInfo();
+			dMatrix matrix(child->GetMeshMatrix() * child->CalculateGlobalMatrix());
+			matrix.m_posit += location;
+			dFloat mass = density * NewtonConvexCollisionCalculateVolume(shape);
+			CreateSimpleSolid(scene, mesh, mass, matrix, shape, defaultMaterialID);
+		}
+	}
+
+	// destroy all shapes
+	while (filter.GetRoot()) {
+		NewtonCollision* const shape = filter.GetRoot()->GetInfo();
+		NewtonDestroyCollision(shape);
+		filter.Remove(filter.GetRoot());
+	}
+	delete entity;
+}
+
+
+
+void SetKinematicPose(NewtonBody* const body, const dMatrix& matrix1, dFloat timestep)
+{
+	dMatrix matrix0;
+	const dFloat OneOverDt = 1.0f / timestep;
+	NewtonBodyGetMatrix(body, &matrix0[0][0]);
+
+	dQuaternion q0(matrix0);
+	dQuaternion q1(matrix1);
+
+	dVector omega(q0.CalcAverageOmega(q1, OneOverDt));
+//	const dFloat maxOmega = 10.0f;
+//	dFloat mag2 = omega.DotProduct3(omega);
+//	if (mag2 > maxOmega) {
+//		omega = omega.Normalize().Scale(maxOmega);
+//	}
+
+	dVector veloc ((matrix1.m_posit - matrix0.m_posit).Scale (OneOverDt));
+
+	NewtonBodySetVelocity(body, &veloc[0]);
+	NewtonBodySetOmega(body, &omega[0]);
+	NewtonBodyIntegrateVelocity(body, timestep);
 }

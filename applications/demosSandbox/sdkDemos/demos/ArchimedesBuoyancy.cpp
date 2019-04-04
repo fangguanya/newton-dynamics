@@ -1,14 +1,12 @@
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoEntityManager.h"
 #include "DemoCamera.h"
 #include "PhysicsUtils.h"
 #include "DemoMesh.h"
-
 #include "OpenGlUtil.h"
 
-
-class MyTriggerManager: public dCustomTriggerManager
+class BuoyancyTriggerManager: public dCustomTriggerManager
 {
 	public:
 	class TriggerCallback
@@ -44,11 +42,27 @@ class MyTriggerManager: public dCustomTriggerManager
 		BuoyancyForce(dCustomTriggerController* const controller)
 			:TriggerCallback (controller)
 			,m_plane(0.0f)
-			,m_waterToSolidVolumeRatio(0.9f)
 		{
 			// get the fluid plane for the upper face of the trigger volume
-			//NewtonBody* const body = m_controller->GetBody();
-			m_plane = dVector (0.0f, 1.0f, 0.0f, 1.5f);
+			NewtonBody* const body = m_controller->GetBody();
+			NewtonWorld* const world = NewtonBodyGetWorld(body);
+
+			dMatrix matrix;
+			NewtonBodyGetMatrix(body, &matrix[0][0]);
+			dVector floor(FindFloor(world, dVector(matrix.m_posit.m_x, 20.0f, matrix.m_posit.m_z, 0.0f), 40.0f));
+			m_plane = dVector (0.0f, 1.0f, 0.0f, -floor.m_y);
+		}
+
+		void OnEnter(NewtonBody* const visitor)
+		{
+			// make some random density, and store on the collision shape for more interesting effect. 
+			dFloat density = 1.1f + dGaussianRandom (0.4f);
+			NewtonCollision* const collision = NewtonBodyGetCollision(visitor);
+
+			NewtonCollisionMaterial collisionMaterial;
+			NewtonCollisionGetMaterial (collision, &collisionMaterial);
+			collisionMaterial.m_userParam[0]= density;
+			NewtonCollisionSetMaterial (collision, &collisionMaterial);
 		}
 
 		void OnInside(NewtonBody* const visitor)
@@ -57,68 +71,112 @@ class MyTriggerManager: public dCustomTriggerManager
 			dFloat Iyy;
 			dFloat Izz;
 			dFloat mass;
-			
+
 			NewtonBodyGetMass(visitor, &mass, &Ixx, &Iyy, &Izz);
 			if (mass > 0.0f) {
 				dMatrix matrix;
-				dVector cog(0.0f);
-				dVector accelPerUnitMass(0.0f);
-				dVector torquePerUnitMass(0.0f);
-				const dVector gravity (0.0f, DEMO_GRAVITY, 0.0f, 0.0f);
+				dVector cenyterOfPreasure(0.0f);
 
 				NewtonBodyGetMatrix (visitor, &matrix[0][0]);
-				NewtonBodyGetCentreOfMass(visitor, &cog[0]);
-				cog = matrix.TransformVector (cog);
 				NewtonCollision* const collision = NewtonBodyGetCollision(visitor);
-
 				
-				dFloat shapeVolume = NewtonConvexCollisionCalculateVolume (collision);
-				dFloat fluidDentity = 1.0f / (m_waterToSolidVolumeRatio * shapeVolume);
-				dFloat viscosity = 0.995f;
+				// calculate the volume and center of mass of the shape under the water surface 
+				dFloat volume = NewtonConvexCollisionCalculateBuoyancyVolume (collision, &matrix[0][0], &m_plane[0], &cenyterOfPreasure[0]);
+				if (volume > 0.0f) {
+					// if some part of the shape si under water, calculate the buoyancy force base on 
+					// Archimedes's buoyancy principle, which is the buoyancy force is equal to the 
+					// weight of the fluid displaced by the volume under water. 
+					dVector cog(0.0f);
+					const dFloat viscousDrag = 0.997f;
+					//const dFloat solidDentityFactor = 1.35f;
 
-				NewtonConvexCollisionCalculateBuoyancyAcceleration (collision, &matrix[0][0], &cog[0], &gravity[0], &m_plane[0], fluidDentity, viscosity, &accelPerUnitMass[0], &torquePerUnitMass[0]);
+					// Get the body density form the collision material.
+					NewtonCollisionMaterial collisionMaterial;
+					NewtonCollisionGetMaterial(collision, &collisionMaterial);
+					const dFloat solidDentityFactor = collisionMaterial.m_userParam[0];
 
-				dVector force (accelPerUnitMass.Scale (mass));
-				dVector torque (torquePerUnitMass.Scale (mass));
+					// calculate the ratio of volumes an use it calculate a density equivalent
+					dFloat shapeVolume = NewtonConvexCollisionCalculateVolume (collision);
+					dFloat density = mass * solidDentityFactor /shapeVolume;
 
-				dVector omega(0.0f); 
-				NewtonBodyGetOmega(visitor, &omega[0]);
-				omega = omega.Scale (viscosity);
-				NewtonBodySetOmega(visitor, &omega[0]);
+					dFloat displacedMass = density * volume;
+					NewtonBodyGetCentreOfMass(visitor, &cog[0]);
+					cenyterOfPreasure -= matrix.TransformVector(cog);
 
-				NewtonBodyAddForce (visitor, &force[0]);
-				NewtonBodyAddTorque (visitor, &torque[0]);
+					// now with the mass and center of mass of the volume under water, calculate buoyancy force and torque
+					dVector force (dFloat(0.0f), dFloat(-DEMO_GRAVITY * displacedMass), dFloat(0.0f), dFloat(0.0f));
+					dVector torque (cenyterOfPreasure.CrossProduct(force));
+
+					NewtonBodyAddForce (visitor, &force[0]);
+					NewtonBodyAddTorque (visitor, &torque[0]);
+
+					// apply a fake viscous drag to damp the under water motion 
+					dVector omega(0.0f);
+					dVector veloc(0.0f);
+					NewtonBodyGetOmega(visitor, &omega[0]);
+					NewtonBodyGetVelocity(visitor, &veloc[0]);
+					omega = omega.Scale(viscousDrag);
+					veloc = veloc.Scale(viscousDrag);
+					NewtonBodySetOmega(visitor, &omega[0]);
+					NewtonBodySetVelocity(visitor, &veloc[0]);
+				}
 			}
 		}
 
 		dVector m_plane;
-		dFloat m_waterToSolidVolumeRatio;
 	};
 
-
-
-	MyTriggerManager(NewtonWorld* const world)
+	BuoyancyTriggerManager(NewtonWorld* const world)
 		:dCustomTriggerManager(world)
+	{
+	}
+
+	~BuoyancyTriggerManager()
 	{
 	}
 
 	void CreateBuoyancyTrigger (const dMatrix& matrix, NewtonCollision* const convexShape)
 	{
-		dCustomTriggerController* const controller = CreateTrigger (matrix, convexShape, NULL);
-		BuoyancyForce* const buoyancyForce = new BuoyancyForce (controller);
-		controller->SetUserData (buoyancyForce);
-	}
+		NewtonWorld* const world = GetWorld();
+		DemoEntityManager* const scene = (DemoEntityManager*)NewtonWorldGetUserData(world);
 
-	void DestroyController (dCustomTriggerController* const controller)
-	{
-		TriggerCallback* const userData = (TriggerCallback*) controller->GetUserData();
-		delete userData;
-		dCustomTriggerManager::DestroyController (controller);
+		// create a large summing pool, using a trigger volume 
+		dCustomTriggerController* const trigger = CreateTrigger (matrix, convexShape, NULL);
+		NewtonBody* const triggerBody = trigger->GetBody();
+
+		NewtonBodySetTransformCallback(triggerBody, DemoEntity::TransformCallback);
+		DemoMesh* const geometry = new DemoMesh("pool", scene->GetShaderCache(), convexShape, "", "", "");
+		DemoEntity* const entity = new DemoEntity(matrix, NULL);
+		scene->Append(entity);
+		entity->SetMesh(geometry, dGetIdentityMatrix());
+		NewtonBodySetUserData(triggerBody, entity);
+
+		for (DemoMesh::dListNode* ptr = geometry->GetFirst(); ptr; ptr = ptr->GetNext()) {
+			DemoSubMesh* const subMesh = &ptr->GetInfo();
+			subMesh->SetOpacity(0.25f);
+			subMesh->m_diffuse.m_x = 0.0f;
+			subMesh->m_diffuse.m_y = 0.0f;
+			subMesh->m_diffuse.m_z = 1.0f;
+			subMesh->m_diffuse.m_z = 1.0f;
+		}
+		geometry->OptimizeForRender();
+
+		geometry->Release();
+
+		BuoyancyForce* const buoyancyForce = new BuoyancyForce (trigger);
+		trigger->SetUserData (buoyancyForce);
 	}
 	
-
+	void DestroyTrigger (dCustomTriggerController* const trigger)
+	{
+		TriggerCallback* const userData = (TriggerCallback*) trigger->GetUserData();
+		delete userData;
+		dCustomTriggerManager::DestroyTrigger (trigger);
+	}
+	
 	virtual void EventCallback (const dCustomTriggerController* const me, dTriggerEventType event, NewtonBody* const visitor) const
 	{
+		// each trigger has it own callback for some effect 
 		TriggerCallback* const callback = (TriggerCallback*) me->GetUserData();
 		switch (event) 
 		{
@@ -144,19 +202,17 @@ class MyTriggerManager: public dCustomTriggerManager
 };
 
 
-
 void AlchimedesBuoyancy(DemoEntityManager* const scene)
 {
 	// load the sky box
 	scene->CreateSkyBox();
-
 
 	// load the mesh 
 	CreateLevelMesh (scene, "swimmingPool.ngd", true);
 
 
 	// add a trigger Manager to the world
-	MyTriggerManager* const triggerManager = new MyTriggerManager(scene->GetNewton());
+	BuoyancyTriggerManager* const triggerManager = new BuoyancyTriggerManager(scene->GetNewton());
 
 	dMatrix triggerLocation (dGetIdentityMatrix());
 	triggerLocation.m_posit.m_x =  17.0f;
@@ -177,62 +233,20 @@ void AlchimedesBuoyancy(DemoEntityManager* const scene)
 	dVector origin (-20.0f, 10.0f, 0.0f, 0.0f);
 	scene->SetCameraMatrix(rot, origin);
 
-
 	int defaultMaterialID = NewtonMaterialGetDefaultGroupID (scene->GetNewton());
 
-/*
-	//test buoyancy on scaled collisions
-	dVector plane (0.0f, 1.0f, 0.0f, 0.0f);
-	dMatrix L1 (dPitchMatrix(30.0f * 3.141692f / 180.0f) * dYawMatrix(0.0f * 3.141692f / 180.0f) * dRollMatrix(0.0f * 3.141692f / 180.0f));
-	NewtonCollision* xxx0 = NewtonCreateCompoundCollision(scene->GetNewton(), 0);
-	NewtonCompoundCollisionBeginAddRemove(xxx0);
-	NewtonCollision* xxxx0 = NewtonCreateBox(scene->GetNewton(), 1.0f, 2.0f, 1.0f, 0, &L1[0][0]);
-	NewtonCompoundCollisionAddSubCollision(xxx0, xxxx0);
-	NewtonCompoundCollisionEndAddRemove(xxx0);
-
-	NewtonCollision* xxx1 = NewtonCreateCompoundCollision(scene->GetNewton(), 0);
-	NewtonCollision* xxxx1 = NewtonCreateBox(scene->GetNewton(), 1.0f, 1.0f, 1.0f, 0, &L1[0][0]);
-	NewtonCompoundCollisionAddSubCollision(xxx1, xxxx1);
-	NewtonCompoundCollisionEndAddRemove(xxx1);
-	NewtonCollisionSetScale(xxx1, 1.0f, 2.0f, 1.0f);
-
-	//dMatrix m (dPitchMatrix(45.0f * 3.141692f / 180.0f) * dYawMatrix(40.0f * 3.141692f / 180.0f) * dRollMatrix(70.0f * 3.141692f / 180.0f));
-	dMatrix m (dPitchMatrix(0.0f * 3.141692f / 180.0f) * dYawMatrix(0.0f * 3.141692f / 180.0f) * dRollMatrix(0.0f * 3.141692f / 180.0f));
-
-	dVector gravity (0.0f, 0.0f, -9.8f, 0.0f);
-	dVector cog0 (0.0f, 0.0f, 0.0f, 0.0f);
-	dVector accelPerUnitMass0;
-	dVector torquePerUnitMass0;
-	NewtonConvexCollisionCalculateBuoyancyAcceleration (xxx0, &m[0][0], &cog0[0], &gravity[0], &plane[0], 1.0f, 0.1f, &accelPerUnitMass0[0], &torquePerUnitMass0[0]);
-
-	dVector cog1 (0.0f, 0.0f, 0.0f, 0.0f);
-	dVector accelPerUnitMass1;
-	dVector torquePerUnitMass1;
-	NewtonConvexCollisionCalculateBuoyancyAcceleration (xxx1, &m[0][0], &cog1[0], &gravity[0], &plane[0], 1.0f, 0.1f, &accelPerUnitMass1[0], &torquePerUnitMass1[0]);
-*/
-
-	int count = 5;
-	dVector size (1.0f, 0.25f, 0.5f);
+	int count = 6;
+	dVector size (1.0f, 0.5f, 0.5f);
 	dVector location (10.0f, 0.0f, 0.0f, 0.0f);
 	dMatrix shapeOffsetMatrix (dGetIdentityMatrix());
 
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _BOX_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CONE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CHAMFER_CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _REGULAR_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CONE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _CHAMFER_CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _REGULAR_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 //	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _COMPOUND_CONVEX_CRUZ_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-
-/*
-for (NewtonBody* bodyPtr = NewtonWorldGetFirstBody(scene->GetNewton()); bodyPtr; bodyPtr = NewtonWorldGetNextBody(scene->GetNewton(), bodyPtr)) {
-	NewtonCollision* collision = NewtonBodyGetCollision(bodyPtr);
-	if (NewtonCollisionGetType(collision) == SERIALIZE_ID_COMPOUND) {
-		NewtonCollisionSetScale (collision, 0.5f, 0.5f, 0.5f);
-	}
-}
-*/
-
-//	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _RANDOM_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 5.0f, _RANDOM_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 }

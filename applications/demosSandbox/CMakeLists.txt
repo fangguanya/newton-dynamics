@@ -1,71 +1,90 @@
-# Copyright (c) <2014> <Newton Game Dynamics>
-# 
+# Copyright (c) <2014-2017> <Newton Game Dynamics>
+#
 # This software is provided 'as-is', without any express or implied
 # warranty. In no event will the authors be held liable for any damages
 # arising from the use of this software.
-# 
+#
 # Permission is granted to anyone to use this software for any purpose,
 # including commercial applications, and to alter it and redistribute it
 # freely.
 
-project(demosSandbox)
+cmake_minimum_required(VERSION 3.10.0)
 
-# keep in demo folder otherwise media won't be found
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR})
+set (projectName "demosSandbox")
+message (${projectName})
+
+ # low level core
+file(GLOB CPP_SOURCE sdkDemos/*.cpp sdkDemos/toolBox/*.cpp sdkDemos/demos/*.cpp)
+file(GLOB HEADERS sdkDemos/*.h sdkDemos/toolBox/*.h sdkDemos/demos/*.h)
 
 include_directories(sdkDemos/)
+include_directories(sdkDemos/demos/)
 include_directories(sdkDemos/toolBox/)
+include_directories(../../sdk/dMath/)
+include_directories(../../sdk/dgCore/)
+include_directories(../../sdk/dScene/)
+include_directories(../../sdk/dNewton/)
+include_directories(../../sdk/dgNewton/)
+include_directories(../../sdk/dVehicle/)
+include_directories(../../sdk/dgPhysics/)
+include_directories(../../sdk/dAnimation/)
+include_directories(../../sdk/dgMeshUtil/)
+include_directories(../../sdk/dContainers/)
+include_directories(../../sdk/dCustomJoints/)
+include_directories(../../sdk/thirdParty/tinyxml/)
 
-file(GLOB_RECURSE sandbox_srcs RELATIVE ${CMAKE_CURRENT_LIST_DIR} sdkDemos/*.cpp)
+if (NEWTON_BUILD_PROFILER)
+	include_directories(../../sdk/dProfiler/dProfiler/)
+endif ()
 
-# these can't be compiled
-list(REMOVE_ITEM sandbox_srcs "sdkDemos/demos/SpecialTrackJoints.cpp")
-list(REMOVE_ITEM sandbox_srcs "sdkDemos/toolBox/LevelPrimitive.cpp")
-list(REMOVE_ITEM sandbox_srcs "sdkDemos/toolBox/ShaderPrograms.cpp")
+include_directories(../../sdk/thirdParty/glfw/)
+include_directories(../../sdk/thirdParty/imgui/)
+include_directories(../../sdk/thirdParty/glfw/include/glfw/)
+include_directories(../../sdk/thirdParty/glatter/include/glatter/)
+add_executable(${projectName} ${CPP_SOURCE})
 
-add_executable(demosSandbox ${sandbox_srcs})
+target_link_libraries (${projectName} dNewton dScene dVehicle glfw imgui glatter)
+if (NEWTON_BUILD_PROFILER)
+    target_link_libraries (${projectName} dProfiler)
+endif ()
 
-target_link_libraries(demosSandbox dMath dScene dCustomJoints dContainers dAnimation)
+if(MSVC)
+    if(NEWTON_BUILD_SHARED_LIBS)
+        add_definitions(-D_DSCENE_DLL)
+        add_definitions(-D_DCONTAINERS_DLL)
+    else(NEWTON_BUILD_SHARED_LIBS)
+        add_definitions(-D_NEWTON_STATIC_LIB)
+        add_definitions(-D_DVEHICLE_STATIC_LIB)
+        add_definitions(-D_CNEWTON_STATIC_LIB)
+        add_definitions(-D_CUSTOM_JOINTS_STATIC_LIB)
+    endif(NEWTON_BUILD_SHARED_LIBS)
 
+    target_link_libraries (${projectName} glu32 opengl32)
 
-# 3rd party dependencies
-
-find_package(wxWidgets REQUIRED gl core base)
-include(${wxWidgets_USE_FILE})
-target_link_libraries(demosSandbox ${wxWidgets_LIBRARIES})
-
-find_package(Freetype REQUIRED)
-include_directories(${FREETYPE_INCLUDE_DIRS})
-target_link_libraries(demosSandbox ${FREETYPE_LIBRARIES})
-
-find_package(OpenGL REQUIRED)
-include_directories(${OPENGL_INCLUDE_DIRS})
-target_link_libraries(demosSandbox ${OPENGL_LIBRARIES})
-
-find_package(TinyXML REQUIRED)
-include_directories(${TinyXML_INCLUDE_DIRS})
-target_link_libraries(demosSandbox ${TinyXML_LIBRARIES})
-
-find_package(OpenAL REQUIRED)
-include_directories(${OPENAL_INCLUDE_DIR})
-target_link_libraries(demosSandbox ${OPENAL_LIBRARY})
-
-find_package(GLEW)
-include_directories(${GLEW_INCLUDE_DIR})
-target_link_libraries(demosSandbox ${GLEW_LIBRARY})
-
+    if(CMAKE_VS_MSBUILD_COMMAND OR CMAKE_VS_DEVENV_COMMAND)
+		set_target_properties(${projectName} PROPERTIES COMPILE_FLAGS "/Yutoolbox_stdafx.h")
+		set_source_files_properties(sdkDemos/toolBox/toolbox_stdafx.cpp PROPERTIES COMPILE_FLAGS "/Yctoolbox_stdafx.h")
+		set_source_files_properties(sdkDemos/toolBox/FileBrowser.cpp PROPERTIES COMPILE_FLAGS "/Y-")
+    endif()
+endif(MSVC)
 
 if (UNIX)
-  add_definitions(-DD_JOINTLIBRARY_STATIC_LIB)
+    target_link_libraries (${projectName} GL GLU dl X11 pthread)
 
-  if (BUILD_64)
-    add_definitions(-D_POSIX_VER -D_POSIX_VER_64)
-  else (BUILD_64)
-    add_definitions(-D_POSIX_VER)
-  endif (BUILD_64)
+    set (source "${CMAKE_SOURCE_DIR}/applications/media")
+    set (destination "${PROJECT_BINARY_DIR}/applications/media")
+    add_custom_command(
+        TARGET ${projectName} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${source} ${destination}
+        DEPENDS ${destination}
+        COMMENT "symbolic link resources folder from ${source} => ${destination}")
 endif(UNIX)
 
-if (CMAKE_COMPILER_IS_GNUCC)
-  add_definitions(-fpic -msse -msse2 -c -Wall -std=c++11) 
-endif(CMAKE_COMPILER_IS_GNUCC)
- 
+message (${CMAKE_CONFIGURATION_TYPES})
+
+if (MSVC)
+    file(GLOB media ../media/*.*)
+    file(GLOB shaders ../media/shaders/*.*)
+    install(FILES ${media} DESTINATION "${PROJECT_BINARY_DIR}/applications/media")
+    install(FILES ${shaders} DESTINATION "${PROJECT_BINARY_DIR}/applications/media/shaders")
+endif(MSVC)

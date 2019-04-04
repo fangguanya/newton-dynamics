@@ -9,7 +9,7 @@
 * freely
 */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoEntityManager.h"
 #include "DemoCamera.h"
@@ -24,11 +24,6 @@ class ShowCollisionCollide: public DemoEntity::UserData
 	ShowCollisionCollide (NewtonBody* body)
 		:m_body(body)
 	{
-	}
-
-	virtual void OnInterpolateMatrix (DemoEntityManager& world, dFloat param) const
-	{
-
 	}
 
 	virtual void OnRender (dFloat timestep) const
@@ -110,10 +105,10 @@ static void AddSinglePrimitive (DemoEntityManager* const scene, dFloat x, Primit
 	NewtonCollision* const collision = CreateConvexCollision (world, dGetIdentityMatrix(), size, type, materialID);
 
 	//	DemoMesh____* const geometry = new DemoMesh____("cylinder_1", collision, "wood_0.tga", "wood_0.tga", "wood_1.tga");
-	DemoMesh* const geometry = new DemoMesh("cylinder_1", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+	DemoMesh* const geometry = new DemoMesh("cylinder_1", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga");
 
 
-	matrix = dRollMatrix(3.141592f/2.0f);
+	matrix = dRollMatrix(dPi/2.0f);
 	matrix.m_posit.m_x = 0;
 	matrix.m_posit.m_z = x;
 	matrix.m_posit.m_y = 0;
@@ -165,7 +160,7 @@ void PrimitiveCollision (DemoEntityManager* const scene)
 	}
 
 	// place camera into position
-	//dMatrix camMatrix (dYawMatrix(90.0f * 3.1416f /180.0f));
+	//dMatrix camMatrix (dYawMatrix(90.0f * dDegreeToRad));
 	dMatrix camMatrix (dGetIdentityMatrix());
 	dQuaternion rot (camMatrix);
 	dVector origin (-15.0f, 0.0f, 0.0f, 0.0f);

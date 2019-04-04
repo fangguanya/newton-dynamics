@@ -9,15 +9,12 @@
 * freely
 */
 
-
-
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoMesh.h"
 #include "DemoEntityManager.h"
 #include "DemoCamera.h"
 #include "PhysicsUtils.h"
-
 
 static void AddUniformScaledPrimitives (DemoEntityManager* const scene, dFloat mass, const dVector& origin, const dVector& size, int xCount, int zCount, dFloat spacing, PrimitiveType type, int materialID, const dMatrix& shapeOffsetMatrix)
 {
@@ -26,15 +23,21 @@ static void AddUniformScaledPrimitives (DemoEntityManager* const scene, dFloat m
 	NewtonCollision* const collision = CreateConvexCollision (world, &shapeOffsetMatrix[0][0], size, type, materialID);
 
 	dFloat startElevation = 1000.0f;
-	dMatrix matrix (dRollMatrix(-3.141592f/2.0f));
+	dMatrix matrix (dRollMatrix(-dPi/2.0f));
+
+	dMatrix uvMatrix (dRollMatrix(dPi/2.0f));
+//	dMatrix uvMatrix (dPitchMatrix(30.0F * dDegreeToRad) * dYawMatrix(30.0F * dDegreeToRad) * dRollMatrix(15.0f * dDegreeToRad));
+//	dMatrix uvMatrix (dPitchMatrix(45.0F * dDegreeToRad));
 	for (int i = 0; i < xCount; i ++) {
 		dFloat x = origin.m_x + (i - xCount / 2) * spacing;
 		for (int j = 0; j < zCount; j ++) {
 
 			dFloat scale = 0.75f + 1.0f * (dFloat (dRand()) / dFloat(dRAND_MAX) - 0.5f);
-//scale = 1.0f;
+			//scale = 1.0f;
+			// test skin thickness
+			NewtonCollisionSetSkinThickness(collision, 0.01f);
 			NewtonCollisionSetScale (collision, scale, scale, scale);
-			DemoMesh* const geometry = new DemoMesh("cylinder_1", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+			DemoMesh* const geometry = new DemoMesh("cylinder_1", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga", 1.0f, uvMatrix);
 
 			dFloat z = origin.m_z + (j - zCount / 2) * spacing;
 			matrix.m_posit.m_x = x;
@@ -54,7 +57,6 @@ static void AddUniformScaledPrimitives (DemoEntityManager* const scene, dFloat m
 	NewtonDestroyCollision (collision);
 }
 
-
 static void AddNonUniformScaledPrimitives(DemoEntityManager* const scene, dFloat mass, const dVector& origin, const dVector& size, int xCount, int zCount, dFloat spacing, PrimitiveType type, int materialID, const dMatrix& shapeOffsetMatrix)
 {
 	// create the shape and visual mesh as a common data to be re used
@@ -63,7 +65,8 @@ static void AddNonUniformScaledPrimitives(DemoEntityManager* const scene, dFloat
 
 	dFloat startElevation = 1000.0f;
 	dMatrix matrix(dGetIdentityMatrix());
-	//matrix = dPitchMatrix(-45.0f * 3.141592f/180.0f);
+
+	dMatrix uvMatrix (dRollMatrix(dPi/2.0f));
 	for (int i = 0; i < xCount; i++) {
 		dFloat x = origin.m_x + (i - xCount / 2) * spacing;
 		for (int j = 0; j < zCount; j++) {
@@ -79,12 +82,11 @@ static void AddNonUniformScaledPrimitives(DemoEntityManager* const scene, dFloat
 			matrix.m_posit.m_y = floor.m_y + 8.0f;
 
 			// create a solid
-			//NewtonBody* const body = CreateSimpleSolid (scene, geometry, mass, matrix, collision, materialID);
 			NewtonBody* const body = CreateSimpleSolid(scene, NULL, mass, matrix, collision, materialID);
 
 			DemoEntity* entity = (DemoEntity*)NewtonBodyGetUserData(body);
 			NewtonCollisionSetScale(collision, scalex, scaley, scalez);
-			DemoMesh* const geometry = new DemoMesh("cylinder_1", collision, "smilli.tga", "smilli.tga", "smilli.tga");
+			DemoMesh* const geometry = new DemoMesh("cylinder_1", scene->GetShaderCache(), collision, "smilli.tga", "smilli.tga", "smilli.tga", 1.0f, uvMatrix);
 			entity->SetMesh(geometry, dGetIdentityMatrix());
 			NewtonBodySetCollisionScale(body, scalex, scaley, scalez);
 
@@ -100,8 +102,6 @@ static void AddNonUniformScaledPrimitives(DemoEntityManager* const scene, dFloat
 	NewtonDestroyCollision(collision);
 }
 
-
-
 static void CreateScaleStaticMesh (DemoEntity* const entity, NewtonCollision* const collision, DemoEntityManager* const scene, const dMatrix& location, const dVector& scale)
 {
 	// now make a scale version of the same model
@@ -110,7 +110,7 @@ static void CreateScaleStaticMesh (DemoEntity* const entity, NewtonCollision* co
 	dAssert (mesh->IsType(DemoMesh::GetRttiType()));
 
 	// since the render does no handle scale, we will made a duplicated mesh with the scale baked in
-	DemoMesh* const scaledMesh =  new DemoMesh (*mesh);
+	DemoMesh* const scaledMesh =  new DemoMesh (*mesh, scene->GetShaderCache());
 	// now scale the vertex list 
 	for (int i = 0 ; i < mesh->m_vertexCount; i ++) {
 		scaledMesh->m_vertex[i * 3 + 0] *= scale.m_x;
@@ -136,47 +136,6 @@ static void CreateScaleStaticMesh (DemoEntity* const entity, NewtonCollision* co
 	NewtonBodySetCollisionScale (scaledBody, scale.m_x, scale.m_y, scale.m_z);
 }
 
-void UniformScaledCollision(DemoEntityManager* const scene)
-{
-	// load the skybox
-	scene->CreateSkyBox();
-
-	// load the scene from a ngd file format
-	AddFloorBox(scene, dVector (0.0f, 0.0f, 0.0f, 0.0f), dVector (100.0f, 1.0f, 100.0f, 0.0f));
-	//CreateLevelMesh(scene, "flatPlane.ngd", 0);
-	//CreateLevelMesh (scene, "sponza.ngd", 0);
-	//CreateLevelMesh (scene, "cattle.ngd", fileName);
-	//CreateLevelMesh (scene, "playground.ngd", 0);
-
-	dMatrix camMatrix(dRollMatrix(-20.0f * 3.1416f / 180.0f) * dYawMatrix(-45.0f * 3.1416f / 180.0f));
-	dQuaternion rot(camMatrix);
-	//	dVector origin (-30.0f, 40.0f, -15.0f, 0.0f);
-	dVector origin(-5.0f, 5.0f, -15.0f, 0.0f);
-	scene->SetCameraMatrix(rot, origin);
-
-	NewtonWorld* const world = scene->GetNewton();
-	int defaultMaterialID = NewtonMaterialGetDefaultGroupID(world);
-	dVector location(0.0f, 0.0f, 0.0f, 0.0f);
-	dVector size0(0.5f, 0.5f, 0.5f, 0.0f);
-	dVector size1(0.25f, 0.5f, 0.5f, 0.0f);
-
-	dMatrix shapeOffsetMatrix(dRollMatrix(3.141592f / 2.0f));
-
-	int count = 5;
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _BOX_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size1, count, count, 4.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size1, count, count, 4.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CHAMFER_CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CONE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _REGULAR_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _RANDOM_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _COMPOUND_CONVEX_CRUZ_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
-}
-
-
 void NonUniformScaledCollision(DemoEntityManager* const scene)
 {
 	// load the skybox
@@ -189,7 +148,7 @@ void NonUniformScaledCollision(DemoEntityManager* const scene)
 	//CreateLevelMesh (scene, "cattle.ngd", fileName);
 	//CreateLevelMesh (scene, "playground.ngd", 1);
 
-	dMatrix camMatrix(dRollMatrix(-20.0f * 3.1416f / 180.0f) * dYawMatrix(-45.0f * 3.1416f / 180.0f));
+	dMatrix camMatrix(dRollMatrix(-20.0f * dDegreeToRad) * dYawMatrix(-45.0f * dDegreeToRad));
 	dQuaternion rot(camMatrix);
 	//	dVector origin (-30.0f, 40.0f, -15.0f, 0.0f);
 	dVector origin(-10.0f, 5.0f, -15.0f, 0.0f);
@@ -202,7 +161,7 @@ void NonUniformScaledCollision(DemoEntityManager* const scene)
 	dVector size1(0.25f, 0.5f, 0.5f, 0.0f);
 
 	int count = 5;
-	dMatrix shapeOffsetMatrix(dRollMatrix(3.141592f / 2.0f));
+	dMatrix shapeOffsetMatrix(dRollMatrix(dPi / 2.0f));
 	shapeOffsetMatrix.m_posit.m_y = 0.0f;
 
 	AddNonUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
@@ -218,6 +177,47 @@ void NonUniformScaledCollision(DemoEntityManager* const scene)
 	AddNonUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _COMPOUND_CONVEX_CRUZ_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 }
 
+void UniformScaledCollision(DemoEntityManager* const scene)
+{
+	// load the skybox
+	scene->CreateSkyBox();
+
+	// load the scene from a ngd file format
+	AddFloorBox(scene, dVector(0.0f, 0.0f, 0.0f, 0.0f), dVector(100.0f, 1.0f, 100.0f, 0.0f));
+	//CreateLevelMesh(scene, "flatPlane.ngd", 0);
+	//CreateLevelMesh (scene, "sponza.ngd", 0);
+	//CreateLevelMesh (scene, "cattle.ngd", fileName);
+	//CreateLevelMesh (scene, "playground.ngd", 0);
+
+	dMatrix camMatrix(dRollMatrix(-20.0f * dDegreeToRad) * dYawMatrix(-45.0f * dDegreeToRad));
+	dQuaternion rot(camMatrix);
+	//	dVector origin (-30.0f, 40.0f, -15.0f, 0.0f);
+	dVector origin(-5.0f, 5.0f, -15.0f, 0.0f);
+	scene->SetCameraMatrix(rot, origin);
+
+	NewtonWorld* const world = scene->GetNewton();
+	int defaultMaterialID = NewtonMaterialGetDefaultGroupID(world);
+	dVector location(0.0f, 0.0f, 0.0f, 0.0f);
+	dVector size0(0.5f, 0.5f, 0.5f, 0.0f);
+	dVector size1(0.25f, 0.5f, 0.5f, 0.0f);
+
+	dMatrix shapeOffsetMatrix(dRollMatrix(dPi / 2.0f));
+
+	int count = 6;
+
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _BOX_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size1, count, count, 4.0f, _CAPSULE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size1, count, count, 4.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CHAMFER_CYLINDER_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _CONE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _REGULAR_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _RANDOM_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+	AddUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 4.0f, _COMPOUND_CONVEX_CRUZ_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
+}
+
 void ScaledMeshCollision (DemoEntityManager* const scene)
 {
 	// load the skybox
@@ -231,7 +231,7 @@ void ScaledMeshCollision (DemoEntityManager* const scene)
 	//CreateLevelMesh (scene, "cattle.ngd", fileName);
 	//CreateLevelMesh (scene, "playground.ngd", 0);
 
-	//dMatrix camMatrix (dRollMatrix(-20.0f * 3.1416f /180.0f) * dYawMatrix(-45.0f * 3.1416f /180.0f));
+	//dMatrix camMatrix (dRollMatrix(-20.0f * dDegreeToRad) * dYawMatrix(-45.0f * dDegreeToRad));
 	dMatrix camMatrix (dGetIdentityMatrix());
 	dQuaternion rot (camMatrix);
 	dVector origin (-15.0f, 5.0f, 0.0f, 0.0f);
@@ -250,32 +250,32 @@ void ScaledMeshCollision (DemoEntityManager* const scene)
 	matrix.m_posit.m_z = 0.0f;
 	matrix.m_posit.m_w = 1.0f;
 
-	DemoEntity teaPot (dGetIdentityMatrix(), NULL);
-	teaPot.LoadNGD_mesh("teapot.ngd", world);
-	//teaPot.LoadNGD_mesh("box.ngd", world);
+	DemoEntity* const teaPot = DemoEntity::LoadNGD_mesh("teapot.ngd", world, scene->GetShaderCache());
 
-	NewtonCollision* const staticCollision = CreateCollisionTree (world, &teaPot, 0, true);
-	CreateScaleStaticMesh (&teaPot, staticCollision, scene, matrix, dVector (1.0f, 1.0f, 1.0f, 0.0f));
+	NewtonCollision* const staticCollision = CreateCollisionTree (world, teaPot, 0, true);
+	CreateScaleStaticMesh(teaPot, staticCollision, scene, matrix, dVector(1.0f, 1.0f, 1.0f, 0.0f));
 
 	matrix.m_posit.m_z = -5.0f;
-	CreateScaleStaticMesh (&teaPot, staticCollision, scene, matrix, dVector (0.5f, 0.5f, 2.0f, 0.0f));
+	CreateScaleStaticMesh(teaPot, staticCollision, scene, matrix, dVector(0.5f, 0.5f, 2.0f, 0.0f));
 
 	matrix.m_posit.m_z = 5.0f;
-	CreateScaleStaticMesh (&teaPot, staticCollision, scene, matrix, dVector (3.0f, 3.0f, 1.5f, 0.0f));
+	CreateScaleStaticMesh (teaPot, staticCollision, scene, matrix, dVector (3.0f, 3.0f, 1.5f, 0.0f));
 
 	matrix.m_posit.m_z = 0.0f;
 	matrix.m_posit.m_x = -5.0f;
-	CreateScaleStaticMesh (&teaPot, staticCollision, scene, matrix, dVector (0.5f, 0.5f, 0.5f, 0.0f));
+	CreateScaleStaticMesh(teaPot, staticCollision, scene, matrix, dVector(0.5f, 0.5f, 0.5f, 0.0f));
 
 	matrix.m_posit.m_x = 5.0f;
-	CreateScaleStaticMesh (&teaPot, staticCollision, scene, matrix, dVector (2.0f, 2.0f, 2.0f, 0.0f));
+	CreateScaleStaticMesh(teaPot, staticCollision, scene, matrix, dVector(2.0f, 2.0f, 2.0f, 0.0f));
 
 	// do not forget to destroy the collision mesh helper
 	NewtonDestroyCollision(staticCollision);
 
+	delete teaPot;
+
 	dVector size0 (0.5f, 0.5f, 0.5f, 0.0f);
 	dVector size1 (0.25f, 0.5f, 0.5f, 0.0f);
-	dMatrix shapeOffsetMatrix (dRollMatrix(3.141592f/2.0f));
+	dMatrix shapeOffsetMatrix (dRollMatrix(dPi/2.0f));
 
 	int count = 3;
 	AddNonUniformScaledPrimitives(scene, 10.0f, location, size0, count, count, 5.0f, _SPHERE_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
@@ -293,5 +293,3 @@ void ScaledMeshCollision (DemoEntityManager* const scene)
 	origin.m_y += 1.0f;
 	scene->SetCameraMatrix(rot, origin);	
 }
-
-

@@ -32,22 +32,21 @@
 class ShaderPrograms
 {
 	public:
-	ShaderPrograms(void);
-	~ShaderPrograms(void);
-
-	static ShaderPrograms& GetCache ();
+	ShaderPrograms();
+	~ShaderPrograms();
 
 	bool CreateAllEffects();
 
 	private:
-	GLuint CreateShaderEffect (const char* name);
-	void LoadShaderCode (const char* name, char *buffer);
+	void LoadShaderCode (const char* const name, char* const buffer);
+	GLuint CreateShaderEffect (const char* const vertexShader, const char* const pixelShader);
 
 	public:
 	GLuint m_solidColor;
 	GLuint m_decalEffect;
 	GLuint m_diffuseEffect;
 	GLuint m_skinningDiffuseEffect;
+	GLuint m_diffuseNoTextureEffect;
 };
 
 

@@ -1,4 +1,4 @@
-/* Copyright (c) <2003-2011> <Julio Jerez, Newton Game Dynamics>
+/* Copyright (c) <2003-2016> <Julio Jerez, Newton Game Dynamics>
 * 
 * This software is provided 'as-is', without any express or implied
 * warranty. In no event will the authors be held liable for any damages
@@ -46,7 +46,7 @@ class MaterialFilter;
 #include <dSceneNodeInfo.h>
 #include <dTextureNodeInfo.h>
 #include <dMaterialNodeInfo.h>
-#include <dGeometryNodeSkinModifierInfo.h>
+#include <dGeometryNodeSkinClusterInfo.h>
 
 #include "Max.h"
 #include "tab.h"

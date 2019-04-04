@@ -10,7 +10,7 @@
 */
 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "TargaToOpenGl.h"
 #include "DemoMesh.h"
@@ -26,8 +26,8 @@ class SimpleSoftBodyEntity: public DemoEntity
 	class ClothPatchMesh: public DemoMesh
 	{
 		public:
-		ClothPatchMesh(NewtonMesh* const clothPatchMesh, NewtonBody* const body)
-			:DemoMesh(clothPatchMesh)
+		ClothPatchMesh(DemoEntityManager* const scene, NewtonMesh* const clothPatchMesh, NewtonBody* const body)
+			:DemoMesh(clothPatchMesh, scene->GetShaderCache())
 			,m_body(body)
 		{
 			ResetOptimization();
@@ -122,8 +122,8 @@ class SimpleSoftBodyEntity: public DemoEntity
 	class TetrahedraSoftMesh: public DemoMesh
 	{
 		public:
-		TetrahedraSoftMesh (NewtonMesh* const tetrahedraMesh, NewtonBody* const body)
-			:DemoMesh(tetrahedraMesh)
+		TetrahedraSoftMesh (DemoEntityManager* const scene, NewtonMesh* const tetrahedraMesh, NewtonBody* const body)
+			:DemoMesh(tetrahedraMesh, scene->GetShaderCache())
 			,m_body (body)
 		{
 			ResetOptimization();
@@ -183,8 +183,9 @@ dAssert (0);
 			dFloat m_weight[4];
 		};
 
-		LinearBlendMeshTetra (NewtonMesh* const skinMesh, NewtonBody* const body)
-			:DemoMesh(skinMesh)
+
+		LinearBlendMeshTetra (DemoEntityManager* const scene, NewtonMesh* const skinMesh, NewtonBody* const body)
+			:DemoMesh(skinMesh, scene->GetShaderCache())
 			,m_body (body)
 			,m_weightSet(NULL)
 		{
@@ -380,7 +381,7 @@ dAssert (0);
 			}
 		}
 
-
+		dMatrix aligmentUV(dGetIdentityMatrix());
 		NewtonMeshVertexFormat vertexFormat;
 		NewtonMeshClearVertexFormat(&vertexFormat);
 
@@ -395,7 +396,7 @@ dAssert (0);
 		NewtonMeshBuildFromVertexListIndexList(clothPatch, &vertexFormat);
 
 		int material = LoadTexture("persianRug.tga");
-		NewtonMeshApplyBoxMapping(clothPatch, material, material, material);
+		NewtonMeshApplyBoxMapping(clothPatch, material, material, material, &aligmentUV[0][0]);
 
 		delete[] points;
 		delete[] faceIndexCount;
@@ -509,9 +510,10 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 			AddTetra (tetrahedra, 0, 1, 2, 3, tetra, 0);
 		NewtonMeshEndBuild(tetrahedra);
 
+		dMatrix aligmentUV(dGetIdentityMatrix());
 		int material = LoadTexture("smilli.tga");
-		NewtonMeshApplyBoxMapping (tetrahedra, material, material, material);
-		NewtonMeshCalculateVertexNormals (tetrahedra, 60.0f * 3.1416f / 180.0f);
+		NewtonMeshApplyBoxMapping (tetrahedra, material, material, material, &aligmentUV[0][0]);
+		NewtonMeshCalculateVertexNormals (tetrahedra, 60.0f * dDegreeToRad);
 
 		// make a deformable collision mesh
 		NewtonCollision* const deformableCollision = NewtonCreateDeformableSolid(world, tetrahedra, materialID);
@@ -520,7 +522,7 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 		m_body = CreateRigidBody (scene, mass, deformableCollision);
 
 		// create the soft body mesh
-		DemoMesh* const mesh = new TetrahedraSoftMesh(tetrahedra, m_body);
+		DemoMesh* const mesh = new TetrahedraSoftMesh(scene, tetrahedra, m_body);
 		SetMesh(mesh, dGetIdentityMatrix());
 
 		// do not forget to destroy this objects, else you get bad memory leaks.
@@ -539,9 +541,10 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 			BuildTetraSolidBlock(tetraCube, 2, 2, 15, 0.5f, 0.5f, 0.5f);
 		NewtonMeshEndBuild(tetraCube);
 
+		dMatrix aligmentUV(dGetIdentityMatrix());
 		int material = LoadTexture("smilli.tga");
-		NewtonMeshApplyBoxMapping(tetraCube, material, material, material);
-		NewtonMeshCalculateVertexNormals(tetraCube, 60.0f * 3.1416f / 180.0f);
+		NewtonMeshApplyBoxMapping(tetraCube, material, material, material, &aligmentUV[0][0]);
+		NewtonMeshCalculateVertexNormals(tetraCube, 60.0f * dDegreeToRad);
 
 		// make a deformable collision mesh
 		NewtonCollision* const deformableCollision = NewtonCreateDeformableSolid(world, tetraCube, materialID);
@@ -550,7 +553,7 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 		m_body = CreateRigidBody(scene, mass, deformableCollision);
 
 		// create the soft body mesh
-		DemoMesh* const mesh = new TetrahedraSoftMesh(tetraCube, m_body);
+		DemoMesh* const mesh = new TetrahedraSoftMesh(scene, tetraCube, m_body);
 		SetMesh(mesh, dGetIdentityMatrix());
 
 		// do not forget to destroy this objects, else you get bad memory leaks.
@@ -568,9 +571,10 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 		dGetWorkingFileName ("box.tet", name);
 		NewtonMesh* const tetraCube = NewtonMeshLoadTetrahedraMesh(scene->GetNewton(), name);
 
+		dMatrix aligmentUV(dGetIdentityMatrix());
 		int material = LoadTexture("smilli.tga");
-		NewtonMeshApplyBoxMapping(tetraCube, material, material, material);
-		NewtonMeshCalculateVertexNormals(tetraCube, 60.0f * 3.1416f / 180.0f);
+		NewtonMeshApplyBoxMapping(tetraCube, material, material, material, &aligmentUV[0][0]);
+		NewtonMeshCalculateVertexNormals(tetraCube, 60.0f * dDegreeToRad);
 
 		// make a deformable collision mesh
 		NewtonCollision* const deformableCollision = NewtonCreateDeformableSolid(world, tetraCube, materialID);
@@ -580,7 +584,7 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 
 		// create the soft body mesh
 		//m_mesh = new TetrahedraSoftMesh(tetraCube, m_body);
-		DemoMesh* const mesh = new TetrahedraSoftMesh(tetraCube, m_body);
+		DemoMesh* const mesh = new TetrahedraSoftMesh(scene, tetraCube, m_body);
 		SetMesh(mesh, dGetIdentityMatrix());
 
 		// do not forget to destroy this objects, else you get bad memory leaks.
@@ -599,8 +603,9 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 		//NewtonCollision* const primitiveShape = CreateConvexCollision (world, dGetIdentityMatrix(), size, _BOX_PRIMITIVE, materialID);
 		NewtonMesh* const skinMesh = NewtonMeshCreateFromCollision(primitiveShape);
 
+		dMatrix aligmentUV(dGetIdentityMatrix());
 		int material = LoadTexture("smilli.tga");
-		NewtonMeshApplySphericalMapping(skinMesh, material);
+		NewtonMeshApplySphericalMapping(skinMesh, material, &aligmentUV[0][0]);
 
 		// now now make an tetrahedra iso surface approximation of this mesh
 		NewtonMesh* const tetraIsoSurface = NewtonMeshCreateTetrahedraIsoSurface(skinMesh);
@@ -617,7 +622,7 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 
 		// create the soft body mesh
 		//DemoMesh* const mesh = new TetrahedraSoftMesh(tetraIsoSurface, m_body);
-		DemoMesh* const mesh = new LinearBlendMeshTetra(skinMesh, m_body);
+		DemoMesh* const mesh = new LinearBlendMeshTetra(scene, skinMesh, m_body);
 		SetMesh(mesh, dGetIdentityMatrix());
 		
 		// do not forget to destroy this objects, else you get bad memory leaks.
@@ -640,9 +645,9 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 
 		dVector* const points = new dVector[vertexCount];
 		for (int i =0; i < vertexCount; i ++ ) {
-			points[i].m_x = meshPoints[i * stride + 0];
-			points[i].m_y = meshPoints[i * stride + 1];
-			points[i].m_z = meshPoints[i * stride + 2];
+			points[i].m_x = dFloat (meshPoints[i * stride + 0]);
+			points[i].m_y = dFloat (meshPoints[i * stride + 1]);
+			points[i].m_z = dFloat (meshPoints[i * stride + 2]);
 			points[i].m_w = 0.0f;
 		}
 
@@ -712,7 +717,7 @@ points[index] -= dVector(width * 0.5f, height * 0.5f, depth * 0.5f, 0.0f);
 		
 		m_body = CreateRigidBody(scene, mass, deformableCollision);
 
-		DemoMesh* const mesh = new ClothPatchMesh (clothPatch, m_body);
+		DemoMesh* const mesh = new ClothPatchMesh (scene, clothPatch, m_body);
 		SetMesh(mesh, dGetIdentityMatrix());
 
 		// do not forget to destroy this objects, else you get bad memory leaks.
@@ -751,7 +756,6 @@ void SoftBodies(DemoEntityManager* const scene)
 	dVector origin(location.m_x - 10.0f, 2.0f, location.m_z, 0.0f);
 	scene->SetCameraMatrix(rot, origin);
 }
-
 
 void ClothPatch(DemoEntityManager* const scene)
 {

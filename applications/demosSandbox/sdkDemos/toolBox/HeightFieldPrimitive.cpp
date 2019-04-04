@@ -9,7 +9,7 @@
 * freely
 */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "TargaToOpenGl.h"
 #include "DemoMesh.h"
 #include "DemoEntityManager.h"
@@ -222,7 +222,7 @@ freq *= 0.5f;
 
 	static dFloat GetElevation (int size, dFloat elevation, dFloat maxH, dFloat minH, dFloat roughness)
 	{
-		dFloat h = pow (dFloat (size) * elevation, 1.0f + roughness);
+		dFloat h = dFloat (pow (dFloat (size) * elevation, 1.0f + roughness));
 		if (h > maxH) {
 			h = maxH;	
 		} else if (h < minH){
@@ -305,7 +305,7 @@ freq *= 0.5f;
 		//		MakeCalderas (elevation, size, maxElevation * 0.7f, maxElevation * 0.1f);
 
 		//	// create the visual mesh
-		DemoMesh* const mesh = new DemoMesh ("terrain", elevation, size, cellSize, 1.0f/4.0f, TILE_SIZE);
+		DemoMesh* const mesh = new DemoMesh ("terrain", scene->GetShaderCache(), elevation, size, cellSize, 1.0f/4.0f, TILE_SIZE);
 
 		DemoEntity* const entity = new DemoEntity(dGetIdentityMatrix(), NULL);
 		scene->Append (entity);
@@ -320,7 +320,6 @@ freq *= 0.5f;
 		char* const attibutes = new char [size * size];
 		memset (attibutes, 0, width * height * sizeof (char));
 		NewtonCollision* collision = NewtonCreateHeightFieldCollision (scene->GetNewton(), width, height, 1, 0, elevation, attibutes, 1.0f, cellSize, cellSize, 0);
-
 
 #ifdef USE_STATIC_MESHES_DEBUG_COLLISION
 		NewtonStaticCollisionSetDebugCallback (collision, ShowMeshCollidingFaces);
@@ -353,8 +352,6 @@ freq *= 0.5f;
 
 		// in newton 300 collision are instance, you need to ready it after you create a body, if you want to male call on the instance
 		collision = NewtonBodyGetCollision(terrainBody);
-
-
 #if 0
 		// uncomment this to test horizontal displacement
 		unsigned short* const horizontalDisplacemnet = new unsigned short[size * size];

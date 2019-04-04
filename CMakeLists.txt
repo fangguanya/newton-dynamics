@@ -1,4 +1,4 @@
-# Copyright (c) <2014> <Newton Game Dynamics>
+# Copyright (c) <2014-2017> <Newton Game Dynamics>
 #
 # This software is provided 'as-is', without any express or implied
 # warranty. In no event will the authors be held liable for any damages
@@ -8,76 +8,46 @@
 # including commercial applications, and to alter it and redistribute it
 # freely.
 
-cmake_minimum_required(VERSION 2.8.8)
+cmake_minimum_required(VERSION 3.10.0)
+
+option("NEWTON_BUILD_SANDBOX_DEMOS" "generates demos projects" ON)
+option("NEWTON_BUILD_PROFILER" "build profiler" OFF)
+option("NEWTON_BUILD_SINGLE_THREADED" "multi threaded" OFF)
+option("NEWTON_DOUBLE_PRECISION" "Generate double precision" OFF)
+option("NEWTON_STATIC_RUNTIME_LIBRARIES" "use windows static libraries" ON)
+#option("NEWTON_WITH_SSE_PLUGIN" "adding asse parallel solver" OFF)
+option("NEWTON_WITH_SSE4_PLUGIN" "adding avx parallel solver (forces shared libs)" OFF)
+option("NEWTON_WITH_AVX_PLUGIN" "adding avx parallel solver (forces shared libs)" ON)
+option("NEWTON_WITH_AVX2_PLUGIN" "adding avx parallel solver (forces shared libs)" OFF)
+#option("NEWTON_WITH_DX12_PLUGIN" "adding direct compute 12 parallel solver" OFF)
+option("NEWTON_BUILD_SHARED_LIBS" "Build shared library" OFF)
+option("NEWTON_BUILD_CORE_ONLY" "Build the core newton library only" OFF)
+
+set(CMAKE_CONFIGURATION_TYPES Debug Release)
+set(CMAKE_DEBUG_POSTFIX "_d")
 
 project(NewtonSDK)
 
-# Use relative paths
-# This is mostly to reduce path size for command-line limits on windows
-if(WIN32)
-  # This seems to break Xcode projects so definitely don't enable on Apple builds
-  set(CMAKE_USE_RELATIVE_PATHS true)
-  set(CMAKE_SUPPRESS_REGENERATION true)
-endif()
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Don't use e.g. GNU extension (like -std=gnu++11) for portability
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Include necessary submodules
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMake)
-
-#####################################################################
-# Set up the basic build environment
-#####################################################################
-
-if (CMAKE_BUILD_TYPE STREQUAL "")
-  # CMake defaults to leaving CMAKE_BUILD_TYPE empty. This screws up
-  # differentiation between debug and release builds.
-  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build, options are: None (CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
+add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+if (NEWTON_DOUBLE_PRECISION)
+	add_definitions(-D_NEWTON_USE_DOUBLE)
 endif ()
 
-if (NOT APPLE)
-  # Create debug libraries with _d postfix
-  set(CMAKE_DEBUG_POSTFIX "_d")
+if (NEWTON_BUILD_SINGLE_THREADED)
+	add_definitions(-DDG_USE_THREAD_EMULATION)
 endif ()
 
-if (MSVC)
-  if (CMAKE_BUILD_TOOL STREQUAL "nmake")
-    # set variable to state that we are using nmake makefiles
-    set(NMAKE TRUE)
-  endif ()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast")
-  # Enable intrinsics on MSVC in debug mode
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Oi")
-  if (CMAKE_CL_64)
-    # Visual Studio bails out on debug builds in 64bit mode unless
-    # this flag is set...
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /bigobj")
-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /bigobj")
-  endif ()
-  if (MSVC_VERSION GREATER 1600 OR MSVC_VERSION EQUAL 1600)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
-  endif ()
-endif ()
-
-# Specify build paths
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${NewtonSDK_BINARY_DIR}/lib")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${NewtonSDK_BINARY_DIR}/lib")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${NewtonSDK_BINARY_DIR}/bin")
-if (WIN32 OR APPLE)
-  if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    # We don't want to install in default system location, install is really for the SDK, so call it that
-    set(CMAKE_INSTALL_PREFIX "${NewtonSDK_SOURCE_DIR}/sdk" CACHE PATH "Newton SDK install directory prefix" FORCE)
-  endif (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-endif ()
-
-###################################################################
-# disable (useless) compiler warnings on project level
-###################################################################
-if(MSVC)
-  add_definitions( /wd4786 /wd4503 /wd4251 /wd4275 /wd4290 /wd4661 /wd4996 /wd4127 /wd4100)
-endif()
-
-if(${CMAKE_C_COMPILER_ID} MATCHES "GNU" OR ${CMAKE_C_COMPILER_ID} MATCHES "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
-endif()
+#If no build type set, Release as default
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+          "Choose the type of build, options are: Debug Release"
+          FORCE)
+endif(NOT CMAKE_BUILD_TYPE)
 
 # determine if we are compiling for a 32bit or 64bit system
 include(CheckTypeSize)
@@ -88,23 +58,125 @@ else ()
   set(BUILD_64 FALSE)
 endif ()
 
-option("DOUBLE_PRECISION" "Use Double Precision" OFF)
-option("NEWTON_DEMOS_SANDBOX" "Build demos sandbox" ON)
-option("THREAD_EMULATION" "Use single thread only" OFF)
+#check for MAC
+if(APPLE)
+  add_definitions(-D_MACOSX_VER)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fms-extensions")
+endif(APPLE)
 
+#check for UNIX
+if (UNIX)
+    if (BUILD_64)
+      add_definitions(-D_POSIX_VER_64)
+    else (BUILD_64)
+      add_definitions(-D_POSIX_VER)
+    endif (BUILD_64)
+endif(UNIX)
 
-if(THREAD_EMULATION)
-  add_definitions(-DDG_USE_THREAD_EMULATION)
+if (UNIX)
+    include("GNUInstallDirs")
+
+    # uninstall target
+    if(NOT TARGET uninstall)
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+            IMMEDIATE @ONLY)
+
+        add_custom_target(uninstall
+            COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+    endif()
+
+    add_compile_options(-msse3)
+
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
+
+    set(NEWTON_GENERATE_DLL OFF CACHE BOOL "" FORCE)
+    set(NEWTON_STATIC_RUNTIME_LIBRARIES OFF CACHE BOOL "" FORCE)
+    set(NEWTON_BUILD_PROFILER OFF CACHE BOOL "" FORCE)
+
+elseif (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "build" CACHE PATH "" FORCE)
+endif ()
+
+if (MSVC)
+	message ("build visual studio projects")
+
+	if(NEWTON_STATIC_RUNTIME_LIBRARIES)
+		message ("link to static runtime libraries")
+		set(CMAKE_C_FLAGS_DEBUG "/MTd")
+		set(CMAKE_C_FLAGS_RELEASE "/MT")
+		set(CMAKE_CXX_FLAGS_DEBUG "/MTd")
+		set(CMAKE_CXX_FLAGS_RELEASE "/MT")
+	else()
+		message ("link to dynamic runtime libraries")
+		set(CMAKE_C_FLAGS_DEBUG "/MDd")
+		set(CMAKE_C_FLAGS_RELEASE "/MD")
+		set(CMAKE_CXX_FLAGS_DEBUG "/MDd")
+		set(CMAKE_CXX_FLAGS_RELEASE "/MD")
+	endif()
+
+	if(CMAKE_CL_64)
+		message ("build 64 bit")
+		add_definitions(-D_WIN_64_VER)
+	else()
+		message ("build 32 bit")
+		add_definitions(-D_WIN_32_VER)
+		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /arch:SSE2")
+	endif()
+
+	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /W4 /Od")
+	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /GS- /W4 /Ox /Oi /Ot /Ob2 /fp:fast")
+
+	message("CMAKE_CXX_FLAGS_DEBUG is ${CMAKE_CXX_FLAGS_DEBUG}")
+	message("CMAKE_CXX_FLAGS_RELEASE is ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
-if(DOUBLE_PRECISION)
- add_definitions(-D_NEWTON_USE_DOUBLE)
+if(NEWTON_BUILD_SANDBOX_DEMOS)
+  set(NEWTON_BUILD_CORE_ONLY OFF)
 endif()
 
-if(NEWTON_DEMOS_SANDBOX)
-  add_subdirectory("${NewtonSDK_SOURCE_DIR}/applications/demosSandbox")
+if(NEWTON_WITH_SSE4_PLUGIN OR NEWTON_WITH_AVX_PLUGIN OR NEWTON_WITH_AVX2_PLUGIN)
+  # If building any of the plugins, then switch to shared libraries.
+  set(NEWTON_BUILD_SHARED_LIBS ON)
 endif()
 
-add_subdirectory("${NewtonSDK_SOURCE_DIR}/packages")
-add_subdirectory("${NewtonSDK_SOURCE_DIR}/packages/thirdParty")
-add_subdirectory("${NewtonSDK_SOURCE_DIR}/coreLibrary_300")
+if(NEWTON_BUILD_PROFILER)
+	#add_definitions(-D_DG_USE_PROFILER)
+	add_definitions(-DD_PROFILER)
+endif()
+
+add_subdirectory(sdk)
+
+if (NEWTON_BUILD_SANDBOX_DEMOS)
+	add_subdirectory(applications/demosSandbox)
+	
+     if(UNIX)
+        find_package(glfw3 REQUIRED)
+
+        if(NOT_glfw3_FOUND)
+            message(WARNING "GLFW headers were not found. Disable NEWTON_BUILD_SANDBOX_DEMOS or install GLFW")
+        else(NOT_glfw3_FOUND)
+            message("Found GLFW library")
+        endif(NOT_glfw3_FOUND)
+        
+        find_package(OpenAL REQUIRED)
+
+        if(NOT_OpenAL_FOUND)
+            message(WARNING "OpenAl headers were not found. Disable NEWTON_BUILD_SANDBOX_DEMOS or install OpenAl")
+        else(NOT_OpenAL_FOUND)
+            message("Found OpenAl library")
+        endif(NOT_OpenAL_FOUND)
+        
+        find_package(OpenGL REQUIRED)
+        
+        if(NOT_OpenGL_FOUND)
+            message(WARNING "OpenGl headers were not found. Disable NEWTON_BUILD_SANDBOX_DEMOS or install OpenGL")
+        else(NOT_OpenGL_FOUND)
+            message("Found OpenGl library")
+        endif(NOT_OpenGL_FOUND)
+        
+      endif(UNIX)
+endif()
+

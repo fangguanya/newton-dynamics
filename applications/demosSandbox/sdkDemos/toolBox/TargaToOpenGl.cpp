@@ -9,12 +9,8 @@
 * freely
 */
 
-
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "TargaToOpenGl.h"
-
-
-
 
 struct TextureEntry: public dRefCounter
 {
@@ -137,7 +133,8 @@ GLuint LoadTexture(const char* const filename)
 		//dAssert (sizeof (TGAHEADER) == 18);
 		// Read in header (binary) sizeof(TGAHEADER) = 18
 		TGAHEADER tgaHeader;		// TGA file header
-		fread(&tgaHeader, 18, 1, pFile);
+		size_t ret = fread(&tgaHeader, 18, 1, pFile);
+		ret = 0;
 
 		// Do byte swap for big vs little Indian
 		tgaHeader.colorMapStart = SWAP_INT16(tgaHeader.colorMapStart);
@@ -205,11 +202,18 @@ GLuint LoadTexture(const char* const filename)
 	return texture;
 } 
 
+#ifndef GL_BGR
+#define GL_BGR 0x80E0
+#define GL_BGRA 0x80E1
+#endif
+
 GLuint LoadImage(const char* const cacheName, const char* const buffer, int width, int hight, TextureImageFormat format)
 {
 	// Get width, height, and depth of texture
 	GLint iWidth = width;
 	GLint iHeight = hight;
+
+	//GL_COLOR_INDEX, GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA, GL_RGB, GL_RGBA, GL_BGR_EXT, GL_BGRA_EXT, GL_LUMINANCE, or GL_LUMINANCE_ALPHA.
 
 	GLenum eFormat = GL_RGBA;
 	GLint iComponents = 4;
@@ -218,11 +222,13 @@ GLuint LoadImage(const char* const cacheName, const char* const buffer, int widt
 		case m_rgb:     
 			// Most likely case
 			eFormat = GL_BGR;
+			//eFormat = GL_RGB;
 			iComponents = 4;
 			break;
 
 		case m_rgba:
 			eFormat = GL_BGRA;
+			//eFormat = GL_RGBA;
 			iComponents = 4;
 			break;
 

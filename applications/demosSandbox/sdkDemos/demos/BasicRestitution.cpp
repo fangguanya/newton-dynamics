@@ -9,7 +9,7 @@
 * freely
 */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoEntityManager.h"
 #include "DemoCamera.h"
@@ -17,39 +17,44 @@
 #include "DemoMesh.h"
 #include "OpenGlUtil.h"
 
-
-
 static void UserContactRestitution (const NewtonJoint* contactJoint, dFloat timestep, int threadIndex)
 {
-	dFloat Ixx;
-	dFloat Iyy;
-	dFloat Izz;
-	dFloat mass;
-	NewtonBody* body;
-	NewtonBody* body0;
-	NewtonBody* body1;
-
 	// call  the basic call back
 	GenericContactProcess (contactJoint, timestep, threadIndex);
 
-	body0 = NewtonJointGetBody0(contactJoint);
-	body1 = NewtonJointGetBody1(contactJoint);
+	const NewtonBody* const body0 = NewtonJointGetBody0(contactJoint);
+	const NewtonBody* const body1 = NewtonJointGetBody1(contactJoint);
 
-	body = body0;
-	NewtonBodyGetMass (body, &mass, &Ixx, &Iyy, &Izz);
-	if (mass == 0.0f) {
-		body = body1;
-	}
+	//now core 3.14 can have per collision user data
+	const NewtonCollision* const collision0 = NewtonBodyGetCollision(body0);
+	const NewtonCollision* const collision1 = NewtonBodyGetCollision(body1);
 
-	NewtonCollision* const collision = NewtonBodyGetCollision(body);
-	void* userData = NewtonCollisionGetUserData (collision);
-	dFloat restitution = *((dFloat*)&userData);
+	NewtonCollisionMaterial material0;
+	NewtonCollisionMaterial material1;
+	NewtonCollisionGetMaterial(collision0, &material0);
+	NewtonCollisionGetMaterial(collision1, &material1);
+	dAssert((material0.m_userId == 1) || (material1.m_userId == 1));
+	dFloat restitution = dMax(material0.m_userParam[0], material1.m_userParam[0]);
+
 	for (void* contact = NewtonContactJointGetFirstContact (contactJoint); contact; contact = NewtonContactJointGetNextContact (contactJoint, contact)) {
 		NewtonMaterial* const material = NewtonContactGetMaterial (contact);
 		NewtonMaterialSetContactElasticity (material, restitution);
 	}
 }
 
+static void CreateResititionBody (DemoEntityManager* const scene, DemoMesh* const mesh, dFloat mass, const dMatrix& matrix, NewtonCollision* const collision, int materialId, dFloat restCoef)
+{
+	NewtonCollisionMaterial material;
+	NewtonCollisionGetMaterial(collision, &material);
+	material.m_userId = 1;
+
+	// save restitution coefficient in param[0]
+	material.m_userParam[0] = restCoef;
+	NewtonCollisionSetMaterial(collision, &material);
+
+	NewtonBody* const body = CreateSimpleSolid(scene, mesh, mass, matrix, collision, materialId);
+	NewtonBodySetLinearDamping(body, 0.0f);
+}
 
 void Restitution (DemoEntityManager* const scene)
 {
@@ -72,15 +77,14 @@ void Restitution (DemoEntityManager* const scene)
 	// create some spheres 
 	dVector sphSize (2.0f, 2.0f, 2.0f, 0.0f);
 	NewtonCollision* const sphereCollision = CreateConvexCollision (world, offsetMatrix, sphSize, _SPHERE_PRIMITIVE, 0);
-	DemoMesh* const sphereMesh = new DemoMesh("sphere", sphereCollision, "smilli.tga", "smilli.tga", "smilli.tga");
+	DemoMesh* const sphereMesh = new DemoMesh("sphere", scene->GetShaderCache(), sphereCollision, "smilli.tga", "smilli.tga", "smilli.tga");
 
 	// create some boxes too
 	dVector boxSize (2.0f, 2.0f, 2.0f, 0.0f);
 	NewtonCollision* const boxCollision = CreateConvexCollision (world, offsetMatrix, boxSize, _BOX_PRIMITIVE, 0);
-	DemoMesh* const boxMesh = new DemoMesh("box", boxCollision, "smilli.tga", "smilli.tga", "smilli.tga");
+	DemoMesh* const boxMesh = new DemoMesh("box", scene->GetShaderCache(), boxCollision, "smilli.tga", "smilli.tga", "smilli.tga");
 
 	int zCount = 10;
-//	int zCount = 1;
 	dFloat spacing = 4.0f;
 	dMatrix matrix (dGetIdentityMatrix());
 	dVector origin (matrix.m_posit);
@@ -88,9 +92,7 @@ void Restitution (DemoEntityManager* const scene)
 
 	// create a simple scene
 	for (int i = 0; i < zCount; i ++) {
-		dFloat restitution = i * 0.1f + 0.083f;
-		NewtonBody* body;
-		NewtonCollision* collision;
+		dFloat restitution = 0.1f * (i + 1);
 
 		dFloat z;
 		dFloat x;
@@ -104,31 +106,16 @@ void Restitution (DemoEntityManager* const scene)
 		matrix.m_posit.m_w = 1.0f;
 
 		matrix.m_posit.m_y += 6.0f;
-		body = CreateSimpleSolid (scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID);
-		NewtonBodySetLinearDamping (body, 0.0f);
-		collision = NewtonBodyGetCollision(body);
-		
-		NewtonCollisionSetUserData (collision, *((void**)&restitution));
+		CreateResititionBody(scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID, restitution);
 
 		matrix.m_posit.m_y += 6.0f;
-		//body = CreateSimpleSolid (scene, boxMesh, mass, matrix, boxCollision, defaultMaterialID);
-		body = CreateSimpleSolid (scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID);
-		NewtonBodySetLinearDamping (body, 0.0f);
-		collision = NewtonBodyGetCollision(body);
-		NewtonCollisionSetUserData (collision, *((void**)&restitution));
+		CreateResititionBody(scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID, restitution);
 
 		matrix.m_posit.m_y += 6.0f;
-		body = CreateSimpleSolid (scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID);
-		NewtonBodySetLinearDamping (body, 0.0f);
-		collision = NewtonBodyGetCollision(body);
-		NewtonCollisionSetUserData (collision, *((void**)&restitution));
+		CreateResititionBody(scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID, restitution);
 
 		matrix.m_posit.m_y += 6.0f;
-		body = CreateSimpleSolid (scene, boxMesh, mass, matrix, boxCollision, defaultMaterialID);
-		//body = CreateSimpleSolid (scene, sphereMesh, mass, matrix, sphereCollision, defaultMaterialID);
-		NewtonBodySetLinearDamping (body, 0.0f);
-		collision = NewtonBodyGetCollision(body);
-		NewtonCollisionSetUserData (collision, *((void**)&restitution));
+		CreateResititionBody(scene, boxMesh, mass, matrix, boxCollision, defaultMaterialID, restitution);
 	}
 
 	boxMesh->Release();

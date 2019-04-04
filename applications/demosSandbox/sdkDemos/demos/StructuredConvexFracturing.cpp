@@ -11,7 +11,7 @@
 
 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "TargaToOpenGl.h"
 #include "DemoMesh.h"
@@ -38,14 +38,14 @@ static int MakeRandomGuassianPointCloud (NewtonMesh* const mesh, dVector* const 
 
 	dFloat biasExp = 10.0f;
 	dFloat r = dSqrt (size.DotProduct3(size));
-	r = powf(r, 1.0f/biasExp);
+	r = dFloat (pow(r, 1.0f/biasExp));
 	for (int i = 0; i < count; i++) {
 		dVector& p = points[i];
 		bool test;
 		do {
-			p = dVector (2.0f * dRandomVariable(r), 2.0f * dRandomVariable(r), 2.0f * dRandomVariable(r), 0.0f);
+			p = dVector (2.0f * dGaussianRandom (r), 2.0f * dGaussianRandom (r), 2.0f * dGaussianRandom (r), 0.0f);
 			dFloat len = dSqrt (p.DotProduct3(p));
-			dFloat scale = powf(len, biasExp) / len;
+			dFloat scale = dFloat (pow(len, biasExp) / len);
 			p = p.Scale (scale) + origin;
 			test = (p.m_x > minBox.m_x) && (p.m_x < maxBox.m_x) && (p.m_y > minBox.m_y) && (p.m_y < maxBox.m_y) && (p.m_z > minBox.m_z) && (p.m_z < maxBox.m_z);
 		} while (!test);
@@ -79,9 +79,9 @@ static int MakeRandomPoisonPointCloud(NewtonMesh* const mesh, dVector* const poi
 				dFloat x = x0;
 				dFloat y = y0;
 				dFloat z = z0;
-				x += dRandomVariable(POISON_VARIANCE);
-				y += dRandomVariable(POISON_VARIANCE);
-				z += dRandomVariable(POISON_VARIANCE);
+				x += dGaussianRandom (POISON_VARIANCE);
+				y += dGaussianRandom (POISON_VARIANCE);
+				z += dGaussianRandom (POISON_VARIANCE);
 				points[count] = dVector (x, y, z);
 				count ++;
 				x0 += POINT_DENSITY_PER_METERS;
@@ -103,6 +103,9 @@ static void OnReconstructMainMeshCallBack (NewtonBody* const body, NewtonFractur
 	
 	dAssert (NewtonCollisionGetType(fracturedCompoundCollision) == SERIALIZE_ID_FRACTURED_COMPOUND);
 
+	DemoEntityManager* const scene = (DemoEntityManager*)NewtonWorldGetUserData(NewtonBodyGetWorld(body));
+	dAssert (scene);
+
 	visualMesh->RemoveAll();
 	for (void* segment = NewtonFracturedCompoundMeshPartGetFirstSegment(mainMesh); segment; segment = NewtonFracturedCompoundMeshPartGetNextSegment (segment)) {
 		DemoSubMesh* const subMesh = visualMesh->AddSubMesh();
@@ -111,6 +114,7 @@ static void OnReconstructMainMeshCallBack (NewtonBody* const body, NewtonFractur
 		int indexCount = NewtonFracturedCompoundMeshPartGetIndexCount (segment); 
 
 		subMesh->m_textureHandle = AddTextureRef ((GLuint)material);
+		subMesh->m_shader = scene->GetShaderCache().m_diffuseEffect;
 
 		subMesh->AllocIndexData (indexCount);
 		subMesh->m_indexCount = NewtonFracturedCompoundMeshPartGetIndexStream (fracturedCompoundCollision, mainMesh, segment, (int*)subMesh->m_indexes); 
@@ -118,7 +122,6 @@ static void OnReconstructMainMeshCallBack (NewtonBody* const body, NewtonFractur
 
 	visualMesh->OptimizeForRender();
 }
-
 
 static void AddMeshVertexwData (DemoMesh* const visualMesh, NewtonFracturedCompoundMeshPart* const fractureMesh, const NewtonCollision* const fracturedCompoundCollision)
 {
@@ -155,7 +158,7 @@ static void OnEmitFracturedChunk (NewtonBody* const chunkBody, NewtonFracturedCo
 	NewtonBodySetUserData (chunkBody, visualChunkEntity);
 
 	// create the mesh geometry and attach it to the entity
-	DemoMesh* const visualChunkMesh = new DemoMesh ("fracturedChuckMesh");
+	DemoMesh* const visualChunkMesh = new DemoMesh ("fracturedChuckMesh", scene->GetShaderCache());
 	visualChunkEntity->SetMesh (visualChunkMesh, dGetIdentityMatrix());
 	visualChunkMesh->Release();
 
@@ -187,7 +190,7 @@ static void OnEmitFracturedCompound (NewtonBody* const fracturedCompound)
 	NewtonBodySetUserData (fracturedCompound, visualChunkEntity);
 
 	// create the mesh geometry and attach it to the entity
-	DemoMesh* const visualChunkMesh = new DemoMesh ("fracturedChuckMesh");
+	DemoMesh* const visualChunkMesh = new DemoMesh ("fracturedChuckMesh", scene->GetShaderCache());
 	visualChunkEntity->SetMesh (visualChunkMesh, dGetIdentityMatrix());
 	visualChunkMesh->Release();
 
@@ -215,7 +218,7 @@ static void CreateVisualEntity (DemoEntityManager* const scene, NewtonBody* cons
 	NewtonBodySetUserData (body, visualEntity);
 
 	// create the mesh geometry and attach it to the entity
-	DemoMesh* const visualMesh = new DemoMesh ("fraturedMainMesh");
+	DemoMesh* const visualMesh = new DemoMesh ("fraturedMainMesh", scene->GetShaderCache());
 	visualEntity->SetMesh (visualMesh, dGetIdentityMatrix());
 	visualMesh->Release();
 
@@ -237,6 +240,7 @@ static void AddStructuredFractured (DemoEntityManager* const scene, const dVecto
 	// create the shape and visual mesh as a common data to be re used
 	NewtonWorld* const world = scene->GetNewton();
 
+	dMatrix aligmentUV (dGetIdentityMatrix());
 
 #if 0
 	// load the mesh asset
@@ -253,7 +257,7 @@ static void AddStructuredFractured (DemoEntityManager* const scene, const dVecto
 	NewtonMesh* const solidMesh = NewtonMeshCreateFromCollision(collision);
 	NewtonDestroyCollision(collision);
 	//NewtonMeshTriangulate(solidMesh);
-	NewtonMeshApplyBoxMapping (solidMesh, externalMaterial, externalMaterial, externalMaterial);
+	NewtonMeshApplyBoxMapping (solidMesh, externalMaterial, externalMaterial, externalMaterial, &aligmentUV[0][0]);
 #endif
 
 
@@ -402,7 +406,7 @@ void StructuredConvexFracturing (DemoEntityManager* const scene)
 	dMatrix shapeOffsetMatrix (dGetIdentityMatrix());
 
 	// place camera into position
-	dQuaternion rot (dVector (0.0f, 1.0f, 0.0f, 0.0f), -30.0f * 3.141592f / 180.0f); 
+	dQuaternion rot (dVector (0.0f, 1.0f, 0.0f, 0.0f), -30.0f * dDegreeToRad); 
 	dVector origin (-45.0f, 20.0f, -15.0f, 0.0f);
 	scene->SetCameraMatrix(rot, origin);
 }

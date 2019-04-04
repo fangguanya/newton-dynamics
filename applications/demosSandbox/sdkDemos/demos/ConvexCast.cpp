@@ -9,10 +9,9 @@
  * freely
  */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoMesh.h"
-#include "NewtonDemos.h"
 #include "PhysicsUtils.h"
 #include "DemoCamera.h"
 #include "OpenGlUtil.h"
@@ -23,9 +22,9 @@ class StupidComplexOfConvexShapes: public DemoEntity
 {
 	public:
 	StupidComplexOfConvexShapes (DemoEntityManager* const scene, int count)
-	:DemoEntity (dGetIdentityMatrix(), NULL)
-	,m_rayP0(0.0f)
-	,m_rayP1(0.0f)
+		:DemoEntity (dGetIdentityMatrix(), NULL)
+		,m_rayP0(0.0f)
+		,m_rayP1(0.0f)
 	{
 		scene->Append(this);
 
@@ -39,14 +38,14 @@ class StupidComplexOfConvexShapes: public DemoEntity
 		int materialID = NewtonMaterialGetDefaultGroupID(world);
 
 		// create a pool of predefined convex mesh
-		//		PrimitiveType selection[] = {_SPHERE_PRIMITIVE,	_BOX_PRIMITIVE,	_CAPSULE_PRIMITIVE, _CYLINDER_PRIMITIVE, _CONE_PRIMITIVE, _CHAMFER_CYLINDER_PRIMITIVE, _RANDOM_CONVEX_HULL_PRIMITIVE, _REGULAR_CONVEX_HULL_PRIMITIVE};
+		// PrimitiveType selection[] = {_SPHERE_PRIMITIVE,	_BOX_PRIMITIVE,	_CAPSULE_PRIMITIVE, _CYLINDER_PRIMITIVE, _CONE_PRIMITIVE, _CHAMFER_CYLINDER_PRIMITIVE, _RANDOM_CONVEX_HULL_PRIMITIVE, _REGULAR_CONVEX_HULL_PRIMITIVE};
 		PrimitiveType selection[] = {_SPHERE_PRIMITIVE};
 		for (int i = 0; i < int (sizeof (collisionArray) / sizeof (collisionArray[0])); i ++) {
 			int index = dRand() % (sizeof (selection) / sizeof (selection[0]));
-			dVector shapeSize (size + dRandomVariable (size / 2.0f), size + dRandomVariable (size / 2.0f), size + dRandomVariable (size / 2.0f), 0.0f);
+			dVector shapeSize (size + dGaussianRandom  (size / 2.0f), size + dGaussianRandom  (size / 2.0f), size + dGaussianRandom  (size / 2.0f), 0.0f);
 			shapeSize = dVector(size, size, size, 0.0f);
 			collisionArray[i] = CreateConvexCollision (world, dGetIdentityMatrix(), shapeSize, selection[index], materialID);
-			gemetries[i] = new DemoMesh("geometry", collisionArray[i], "wood_4.tga", "wood_4.tga", "wood_1.tga");
+			gemetries[i] = new DemoMesh("geometry", scene->GetShaderCache(), collisionArray[i], "wood_4.tga", "wood_4.tga", "wood_1.tga");
 		}
 
 		// make a large complex of plane by adding lost of these shapes at a random location and oriention;
@@ -55,13 +54,13 @@ class StupidComplexOfConvexShapes: public DemoEntity
 		
 		for (int i = 0 ; i < count; i ++) {
 			for (int j = 0 ; j < count; j ++) {
-				dFloat pitch = dRandomVariable (1.0f) * 2.0f * 3.1416f;
-				dFloat yaw = dRandomVariable (1.0f) * 2.0f * 3.1416f;
-				dFloat roll = dRandomVariable (1.0f) * 2.0f * 3.1416f;
+				dFloat pitch = dGaussianRandom  (1.0f) * 2.0f * dPi;
+				dFloat yaw = dGaussianRandom  (1.0f) * 2.0f * dPi;
+				dFloat roll = dGaussianRandom  (1.0f) * 2.0f * dPi;
 
-				dFloat x = size * (j - count / 2) + dRandomVariable (size * 0.5f);
-				dFloat y = dRandomVariable (size * 2.0f);
-				dFloat z = size * (i - count / 2) + dRandomVariable (size * 0.5f);
+				dFloat x = size * (j - count / 2) + dGaussianRandom  (size * 0.5f);
+				dFloat y = dGaussianRandom  (size * 2.0f);
+				dFloat z = size * (i - count / 2) + dGaussianRandom  (size * 0.5f);
 
 				dMatrix matrix (dPitchMatrix (pitch) * dYawMatrix (yaw) * dRollMatrix (roll));
 				matrix.m_posit = dVector (x, y, z, 1.0f);
@@ -115,9 +114,9 @@ class StupidComplexOfConvexShapes: public DemoEntity
 		m_castingGeometries = new DemoMesh*[m_count];
 		m_castingShapeArray = new NewtonCollision*[m_count];
 
-		dMatrix alignMatrix (dRollMatrix(3.141592f * 90.0f / 180.0f));
+		dMatrix alignMatrix (dRollMatrix(dPi * 90.0f / 180.0f));
 		for (int i = 0; i < m_count; i ++) {
-			shapeSize = dVector (size + dRandomVariable (size / 2.0f), size + dRandomVariable (size / 2.0f), size + dRandomVariable (size / 2.0f), 0.0f);
+			shapeSize = dVector (size + dGaussianRandom  (size / 2.0f), size + dGaussianRandom  (size / 2.0f), size + dGaussianRandom  (size / 2.0f), 0.0f);
 #if 1
 			m_castingShapeArray[i] = CreateConvexCollision (world, &alignMatrix[0][0], shapeSize, castSelection[i], materialID);
 #else
@@ -128,7 +127,7 @@ class StupidComplexOfConvexShapes: public DemoEntity
 			NewtonDestroyCollision(collision);
 			NewtonCompoundCollisionEndAddRemove(m_castingShapeArray[i]);
 #endif
-			m_castingGeometries[i] = new DemoMesh("geometry", m_castingShapeArray[i], "smilli.tga", "smilli.tga", "smilli.tga");
+			m_castingGeometries[i] = new DemoMesh("geometry", scene->GetShaderCache(), m_castingShapeArray[i], "smilli.tga", "smilli.tga", "smilli.tga");
 		}
 
 		// make and entity for showing the result of the convex cast
@@ -173,8 +172,8 @@ class StupidComplexOfConvexShapes: public DemoEntity
 		glDisable(GL_TEXTURE_2D);
 		glColor3f(1.0f, 1.0f, 1.0f);
 		glBegin(GL_LINES);
-		glVertex3f (m_rayP0.m_x, m_rayP0.m_y, m_rayP0.m_z);
-		glVertex3f (m_rayP1.m_x, m_rayP1.m_y, m_rayP1.m_z);
+		glVertex3f (GLfloat(m_rayP0.m_x), GLfloat(m_rayP0.m_y), GLfloat(m_rayP0.m_z));
+		glVertex3f (GLfloat(m_rayP1.m_x), GLfloat(m_rayP1.m_y), GLfloat(m_rayP1.m_z));
 		glEnd();
 	}
 
@@ -210,29 +209,25 @@ class dConvexCastManager: public dCustomControllerManager<dConvexCastRecord>
 {
 	public:
 	dConvexCastManager(DemoEntityManager* const scene, StupidComplexOfConvexShapes* const stupidLevel)
-	:dCustomControllerManager<dConvexCastRecord>(scene->GetNewton(), "dConvexCastManager")
-	,m_helpKey (true)
-	,m_selectShape (true)
-	,m_stupidLevel(stupidLevel)
+		:dCustomControllerManager<dConvexCastRecord>(scene->GetNewton(), "dConvexCastManager")
+		,m_selectShape (true)
+		,m_stupidLevel(stupidLevel)
 	{
-		scene->Set2DDisplayRenderFunction (RenderHelp, this);
+		scene->Set2DDisplayRenderFunction (RenderHelp, NULL, this);
 	}
 
-	static void RenderHelp (DemoEntityManager* const scene, void* const context, int lineNumber)
+	static void RenderHelp (DemoEntityManager* const scene, void* const context)
 	{
 		dConvexCastManager* const me = (dConvexCastManager*) context;
-		me->RenderHelp (scene, lineNumber);
+		me->RenderHelp (scene);
 	}
 
-	void RenderHelp (DemoEntityManager* const scene, int lineNumber)
+	void RenderHelp (DemoEntityManager* const scene)
 	{
-		if (m_helpKey.GetPushButtonState()) {
-			dVector color(1.0f, 1.0f, 0.0f, 0.0f);
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "mouse point and right click to cast current convex shape");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "space	   : change casting shape");
-			lineNumber = scene->Print (color, 10, lineNumber + 20, "h		   : hide help");
-		}
-	}
+		dVector color(1.0f, 1.0f, 0.0f, 0.0f);
+		scene->Print (color, "mouse point and right click to cast current convex shape");
+		scene->Print (color, "space	   : change casting shape");
+	}				
 
 	virtual void Debug () const
 	{
@@ -250,35 +245,34 @@ class dConvexCastManager: public dCustomControllerManager<dConvexCastRecord>
 
 		NewtonWorld* const world = GetWorld();
 		DemoEntityManager* const scene = (DemoEntityManager*) NewtonWorldGetUserData(world);
-		NewtonDemos* const mainWindow = scene->GetRootWindow();
 		DemoCamera* const camera = scene->GetCamera();
 
-		m_helpKey.UpdatePushButton (mainWindow, 'H');
-		if (m_selectShape.UpdateTriggerButton (mainWindow, ' ')) {
+		//m_helpKey.UpdatePushButton (scene, 'H');
+//		bool state = m_engineKeySwitch.UpdatePushButton(scene->GetKeyState('H'));
+		if (m_selectShape.UpdateTrigger(scene->GetKeyState(' '))) {
 			m_stupidLevel->ChangeCastingShape();
 		}
 
-		bool buttonState = mainWindow->GetMouseKeyState(1);
+		bool buttonState = scene->GetMouseKeyState(1);
 		if (buttonState) {
 			int mouseX;
 			int mouseY;
 
 			buttonState = false;
-			mainWindow->GetMousePosition (mouseX, mouseY);
+			scene->GetMousePosition (mouseX, mouseY);
 
 			dFloat x = dFloat (mouseX);
 			dFloat y = dFloat (mouseY);
 			dVector p0 (camera->ScreenToWorld(dVector (x, y, 0.0f, 0.0f)));
 			dVector p1 (camera->ScreenToWorld(dVector (x, y, 1.0f, 0.0f)));
 
-			//p0 = dVector (-12.044177f, 8.068434f, -7.558466f, 1.0f);
-			//p1 = dVector (1751.264038f, -845.520630f, 633.307312f, 1.0f);
+			//p0 = dVector(-4.426113f, 7.244503f, 15.269794f);
+			//p1 = dVector(878.254150f, -742.662842f, -1708.758545f);
 
 			// do the convex cast here
 			dMatrix matrix (dGetIdentityMatrix());
 			matrix.m_posit = p0;
 
-			
 			dFloat param = 1.2f;
 			NewtonCollision* const shape = m_stupidLevel->GetCurrentShape();
 			//int count = NewtonWorldConvexCast (world, &matrix[0][0], &p1[0], shape, ConvexCastCallBack::Filter, &filter, ConvexCastCallBack::Prefilter, &filter.m_contacts[0], 4, 0);
@@ -295,9 +289,8 @@ class dConvexCastManager: public dCustomControllerManager<dConvexCastRecord>
 		}
 	}
 
-	DemoEntityManager::ButtonKey m_helpKey;
-	DemoEntityManager::ButtonKey m_selectShape;
 	StupidComplexOfConvexShapes* m_stupidLevel;
+	DemoEntityManager::ButtonKey m_selectShape;
 };
 
 
@@ -328,7 +321,7 @@ static void AddSingleCompound(DemoEntityManager* const scene)
 	NewtonBodySetTransformCallback(compoundBody, DemoEntity::TransformCallback);
 	NewtonBodySetForceAndTorqueCallback(compoundBody, PhysicsApplyGravityForce);
 
-	DemoMesh* mesh = new DemoMesh("geometry", NewtonBodyGetCollision(compoundBody), "smilli.tga", "smilli.tga", "smilli.tga");
+	DemoMesh* mesh = new DemoMesh("geometry", scene->GetShaderCache(), NewtonBodyGetCollision(compoundBody), "smilli.tga", "smilli.tga", "smilli.tga");
 	DemoEntity* const entity = new DemoEntity(matrix, NULL);
 	entity->SetMesh(mesh, dGetIdentityMatrix());
 	mesh->Release();
@@ -349,7 +342,7 @@ static void AddStaticMesh(DemoEntityManager* const scene)
 	NewtonMesh* const ntMesh = NewtonMeshLoadOFF(world, fileName);
 
 	dMatrix matrix (dGetIdentityMatrix());
-	DemoMesh* mesh = new DemoMesh(ntMesh);
+	DemoMesh* mesh = new DemoMesh(ntMesh, scene->GetShaderCache());
 	DemoEntity* const entity = new DemoEntity(matrix, NULL);
 	entity->SetMesh(mesh, dGetIdentityMatrix());
 	mesh->Release();
@@ -371,7 +364,7 @@ static void AddUserDefineStaticMesh(DemoEntityManager* const scene)
 	NewtonBody* const body = NewtonCreateDynamicBody(scene->GetNewton(), planeCollision, &matrix[0][0]);
 
 	// create a visual mesh
-	DemoMesh* const mesh = CreateVisualPlaneMesh (planeEquation);
+	DemoMesh* const mesh = CreateVisualPlaneMesh (planeEquation, scene);
 	DemoEntity* const entity = new DemoEntity(matrix, NULL);
 
 	NewtonCollisionGetMatrix(planeCollision, &matrix[0][0]);
@@ -395,7 +388,7 @@ void ConvexCast (DemoEntityManager* const scene)
 
 	//char fileName[2048];
 	//NewtonWorld* const world = scene->GetNewton();
-	//GetWorkingFileName ("low_rez_rim.OFF", fileName);
+	//dGetWorkingFileName ("low_rez_rim.OFF", fileName);
 	//NewtonMesh* const mesh = NewtonMeshLoadOFF(world, fileName);
 	//NewtonCollision* coll = NewtonCreateConvexHullFromMesh (world, mesh, 0.0f, 0);
 	//NewtonDestroyCollision(coll);

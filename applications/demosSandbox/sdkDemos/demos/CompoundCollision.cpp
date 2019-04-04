@@ -11,7 +11,7 @@
 
 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "OpenGlUtil.h"
 #include "SkyBox.h"
 #include "DemoMesh.h"
@@ -104,7 +104,7 @@ static void OnGettingTheCollisionSubShapeFromMaterialCallback (const NewtonJoint
 	GetCollisionSubShape(contactJoint, body1);
 }
 
-static int OnSubShapeAABBOverlapTest (const NewtonMaterial* const material, const NewtonBody* const body0, const void* const collsionNode0, const NewtonBody* const body1, const void* const collsionNode1, int threadIndex)
+static int OnSubShapeAABBOverlapTest (const NewtonJoint* const contact, dFloat timestep, const NewtonBody* const body0, const void* const collsionNode0, const NewtonBody* const body1, const void* const collsionNode1, int threadIndex)
 {
 	return 1;
 }
@@ -183,9 +183,9 @@ static void MakeFunnyCompound (DemoEntityManager* const scene, const dVector& or
 	for (int i = 0 ; i < pointsCount; i ++) {
 		NewtonCollision* collision = NULL;
 
-		dFloat pitch = dRandomVariable (1.0f) * 2.0f * 3.1416f;
-		dFloat yaw = dRandomVariable (1.0f) * 2.0f * 3.1416f;
-		dFloat roll = dRandomVariable (1.0f) * 2.0f * 3.1416f;
+		dFloat pitch = dGaussianRandom  (1.0f) * 2.0f * dPi;
+		dFloat yaw = dGaussianRandom  (1.0f) * 2.0f * dPi;
+		dFloat roll = dGaussianRandom  (1.0f) * 2.0f * dPi;
 
 		dFloat x = points[i][0] * radio;
 		dFloat y = points[i][1] * radio;
@@ -293,7 +293,7 @@ static void MakeFunnyCompound (DemoEntityManager* const scene, const dVector& or
 #endif
 
 	// for now we will simple make simple Box,  make a visual Mesh
-	DemoMesh* const visualMesh = new DemoMesh ("big ball", compound, "metal_30.tga", "metal_30.tga", "metal_30.tga");
+	DemoMesh* const visualMesh = new DemoMesh ("big ball", scene->GetShaderCache(), compound, "metal_30.tga", "metal_30.tga", "metal_30.tga");
 
 	int instaceCount = 2;
 	dMatrix matrix (dGetIdentityMatrix());
@@ -311,7 +311,7 @@ static void MakeFunnyCompound (DemoEntityManager* const scene, const dVector& or
 				NewtonCollision* const shape = NewtonBodyGetCollision(body);
 				NewtonCollisionSetScale(shape, 1.5f, 0.75f, 1.0f);
 				DemoEntity* const entity = (DemoEntity*)NewtonBodyGetUserData(body);
-				DemoMesh* const mesh = new DemoMesh ("big ball", shape, "metal_30.tga", "metal_30.tga", "metal_30.tga");
+				DemoMesh* const mesh = new DemoMesh ("big ball", scene->GetShaderCache(), shape, "metal_30.tga", "metal_30.tga", "metal_30.tga");
 				entity->SetMesh(mesh, entity->GetMeshMatrix());
 				mesh->Release();
 			}
@@ -342,7 +342,7 @@ void CompoundCollision (DemoEntityManager* const scene)
 	NewtonMaterialSetCollisionCallback (scene->GetNewton(), defaultMaterialID, defaultMaterialID, NULL, OnGettingTheCollisionSubShapeFromMaterialCallback);
 	NewtonMaterialSetCompoundCollisionCallback(scene->GetNewton(), defaultMaterialID, defaultMaterialID, OnSubShapeAABBOverlapTest);
 
-	dMatrix camMatrix (dRollMatrix(-20.0f * 3.1416f /180.0f) * dYawMatrix(-45.0f * 3.1416f /180.0f));
+	dMatrix camMatrix (dRollMatrix(-20.0f * dDegreeToRad) * dYawMatrix(-45.0f * dDegreeToRad));
 	dQuaternion rot (camMatrix);
 	dVector origin (100.0f, 0.0f, 100.0f, 0.0f);
 	dFloat hight = 1000.0f;
@@ -372,7 +372,7 @@ void CompoundCollision (DemoEntityManager* const scene)
 //origin.m_x += 20.0f;	
 //origin.m_z += 20.0f;	
 	scene->SetCameraMatrix(rot, origin);
-	//ExportScene (scene->GetNewton(), "../../../media/test1.ngd");
+	//ExportScene (scene->GetNewton(), "test1.ngd");
 }
 
 

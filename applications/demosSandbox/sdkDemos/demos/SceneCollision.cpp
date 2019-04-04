@@ -10,7 +10,7 @@
 */
 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "DemoMesh.h"
 #include "DemoEntityManager.h"
@@ -185,17 +185,17 @@ class ComplexScene: public DemoEntity
 
 		//y = a * sin(x)* (sin (z)) ^2
 		for (int i = 0; i < size; i ++) {
-			dFloat z = 3.1416f * i / (size - 1);
+			dFloat z = dPi * i / (size - 1);
 			dFloat z2 = dSin (z);
 			z2 = z2 * z2 * 5.0f;
 			for (int j = 0; j < size; j ++) {
-				dFloat x = 3.1416f * j / (size - 1);
+				dFloat x = dPi * j / (size - 1);
 				dFloat y = z2 * dSin(x);
 				elevation[j * size + i] = y;
 			}
 		}
 		dFloat cellsize = 0.25f;
-		DemoMesh* const mesh = new DemoMesh ("terrain", elevation, size, cellsize, 1.0f/16.0f, size - 1);
+		DemoMesh* const mesh = new DemoMesh ("terrain", scene->GetShaderCache(), elevation, size, cellsize, 1.0f/16.0f, size - 1);
 		
 		int width = size;
 		int height = size;
@@ -225,14 +225,14 @@ class ComplexScene: public DemoEntity
 	{
 		dMatrix offsetMatrix (dGetIdentityMatrix());
 		NewtonCollision* const box = NewtonCreateBox (scene->GetNewton(), 4.0f, 0.1f, 4.0f, 0, &offsetMatrix[0][0]) ;
-		DemoMesh* const mesh = new DemoMesh (" box",  box, "metal_30.tga", "metal_30.tga", "metal_30.tga");
+		DemoMesh* const mesh = new DemoMesh (" box", scene->GetShaderCache(),  box, "metal_30.tga", "metal_30.tga", "metal_30.tga");
 
 		// add compound to the scene collision
 		dMatrix matrix;
 		void* proxy;
 		NewtonCollision* shape;
 		
-		matrix = dRollMatrix(15.0f * 3.1416f / 180.0f);
+		matrix = dRollMatrix(15.0f * dDegreeToRad);
 		matrix.m_posit.m_y = 4.0f;
 		matrix.m_posit.m_x = 3.0f;
 		matrix.m_posit.m_z = 0.0f;
@@ -243,7 +243,7 @@ class ComplexScene: public DemoEntity
 		mesh->AddRef();
 
 		
-		matrix = dRollMatrix(-15.0f * 3.1416f / 180.0f);
+		matrix = dRollMatrix(-15.0f * dDegreeToRad);
 		matrix.m_posit.m_y = 8.0f;
 		matrix.m_posit.m_x = -3.0f;
 		matrix.m_posit.m_z = 0.0f;
@@ -283,13 +283,14 @@ class ComplexScene: public DemoEntity
 
 // called when the a body touches the aabb of the scene collision, in most case must return true and let
 // OnSubShapeAABBOverlapTest handle specific overlap with sun collision shapes in the scene collision
-static int OnBodyAABBOverlap (const NewtonMaterial* const material, const NewtonBody* const body0, const NewtonBody* const body1, int threadIndex)
+//static int OnBodyAABBOverlap (const NewtonMaterial* const material, const NewtonBody* const body0, const NewtonBody* const body1, int threadIndex)
+static int OnBodyAABBOverlap(const NewtonJoint* const contactJoint, dFloat timestep, int threadIndex)
 {
 	return 1;
 }
 
 
-static int OnSubShapeAABBOverlapTest (const NewtonMaterial* const material, const NewtonBody* const body0, const void* const collsionNode0, const NewtonBody* const body1, const void* const collsionNode1, int threadIndex)
+static int OnSubShapeAABBOverlapTest (const NewtonJoint* const contact, dFloat timestep, const NewtonBody* const body0, const void* const collsionNode0, const NewtonBody* const body1, const void* const collsionNode1, int threadIndex)
 {
 	return 1;
 }
@@ -357,7 +358,7 @@ void SceneCollision (DemoEntityManager* const scene)
 	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 1.7f, _RANDOM_CONVEX_HULL_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 	AddPrimitiveArray(scene, 10.0f, location, size, count, count, 1.7f, _COMPOUND_CONVEX_CRUZ_PRIMITIVE, defaultMaterialID, shapeOffsetMatrix);
 
-	dMatrix camMatrix (dRollMatrix(-20.0f * 3.1416f /180.0f) * dYawMatrix(-45.0f * 3.1416f /180.0f));
+	dMatrix camMatrix (dRollMatrix(-20.0f * dDegreeToRad) * dYawMatrix(-45.0f * dDegreeToRad));
 	dQuaternion rot (camMatrix);
 	dVector origin (-15.0f, 5.0f, -5.0f, 0.0f);
 	scene->SetCameraMatrix(rot, origin);

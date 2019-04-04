@@ -13,12 +13,12 @@
 #ifndef _USER_PLANE_COLLISION_H 
 #define _USER_PLANE_COLLISION_H 
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 
 
 class DemoEntityManager;
 
-DemoMesh* CreateVisualPlaneMesh (const dVector& plane);
+DemoMesh* CreateVisualPlaneMesh (const dVector& plane, DemoEntityManager* const scene);
 NewtonCollision* CreateInfinitePlane (NewtonWorld* const world, const dVector& planeEquation);
 
 

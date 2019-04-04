@@ -28,26 +28,26 @@ DemoEntity::DemoEntity(const dMatrix& matrix, DemoEntity* const parent)
 	,m_mesh (NULL)
 	,m_userData(NULL)
 	,m_lock(0) 
+	,m_isVisible(true)
 {
 	if (parent) {
 		Attach (parent);
 	}
 }
 
-
-
 DemoEntity::DemoEntity(DemoEntityManager& world, const dScene* const scene, dScene::dTreeNode* const rootSceneNode, dTree<DemoMeshInterface*, dScene::dTreeNode*>& meshCache, DemoEntityManager::EntityDictionary& entityDictionary, DemoEntity* const parent)
 	:dClassInfo()
-	,dHierarchy<DemoEntity>() 
-	,m_matrix(dGetIdentityMatrix()) 
-	,m_curPosition (0.0f, 0.0f, 0.0f, 1.0f)
-	,m_nextPosition (0.0f, 0.0f, 0.0f, 1.0f)
-	,m_curRotation (1.0f, 0.0f, 0.0f, 0.0f)
-	,m_nextRotation (1.0f, 0.0f, 0.0f, 0.0f)
+	,dHierarchy<DemoEntity>()
+	,m_matrix(dGetIdentityMatrix())
+	,m_curPosition(0.0f, 0.0f, 0.0f, 1.0f)
+	,m_nextPosition(0.0f, 0.0f, 0.0f, 1.0f)
+	,m_curRotation(1.0f, 0.0f, 0.0f, 0.0f)
+	,m_nextRotation(1.0f, 0.0f, 0.0f, 0.0f)
 	,m_meshMatrix(dGetIdentityMatrix())
-	,m_mesh (NULL)
+	,m_mesh(NULL)
 	,m_userData(NULL)
-	,m_lock(0) 
+	,m_lock(0)
+	,m_isVisible(true)
 {
 	// add this entity to the dictionary
 	entityDictionary.Insert(this, rootSceneNode);
@@ -96,13 +96,12 @@ DemoEntity::DemoEntity(const DemoEntity& copyFrom)
 	,m_curRotation(copyFrom.m_curRotation)
 	,m_nextRotation(copyFrom.m_nextRotation)
 	,m_meshMatrix(copyFrom.m_meshMatrix)
-	,m_mesh(copyFrom.m_mesh)
+	,m_mesh(NULL)
 	,m_userData(NULL)
 	,m_lock(0)
+	,m_isVisible(copyFrom.m_isVisible)
 {
-	if (m_mesh) {
-		m_mesh->AddRef();
-	}
+	m_mesh = copyFrom.m_mesh ? copyFrom.m_mesh->Clone(this) : NULL;
 }
 
 DemoEntity::~DemoEntity(void)
@@ -119,135 +118,6 @@ dBaseHierarchy* DemoEntity::CreateClone () const
 	return new DemoEntity(*this);
 }
 
-void DemoEntity::LoadNGD_mesh (const char* const fileName, NewtonWorld* const world)
-{
-	dScene scene (world);
-
-	char pathName[2048];
-	dGetWorkingFileName (fileName, pathName);
-	scene.Deserialize(pathName);
-
-	// this will apply all global the scale to the mesh
-	scene.FreezeScale();
-
-	// this will apply all local scale and transform to the mesh
-	scene.FreezeGeometryPivot();
-	
-	dScene::dTreeNode* meshRootNode = NULL;
-	dScene::dTreeNode* const root = scene.GetRootNode();
-	for (void* child = scene.GetFirstChildLink(root); child; child = scene.GetNextChildLink (root, child)) {
-		dScene::dTreeNode* const sceneNode = scene.GetNodeFromLink(child);
-		dNodeInfo* const scaneInfo = scene.GetInfoFromNode(sceneNode);
-		if (scaneInfo->GetTypeId() == dSceneNodeInfo::GetRttiType()) {
-			meshRootNode = sceneNode;
-			break;
-		}
-	}
-
-	if (meshRootNode) {
-		int stack;
-		int modifiersCount = 0;
-		DemoEntity* entityStack[256]; 
-		dScene::dTreeNode* nodeStack[256]; 
-		dScene::dTreeNode* nodeModifiers[256];
-		
-		entityStack[0] = this;
-		nodeStack[0] = meshRootNode;
-		
-		stack = 1;
-
-		dTree<DemoMeshInterface*, dScene::dTreeNode*> meshDictionary;
-		while (stack) {
-			stack --;
-
-			DemoEntity* const entity = entityStack[stack];
-			dScene::dTreeNode* sceneNode = nodeStack[stack];
-
-			//dMatrix parentMatrix (GetIdentityMatrix());
-			//dScene::dTreeNode* const parentNode = scene.FindParentByType(rootSceneNode, dSceneNodeInfo::GetRttiType());
-			//if (parentNode) {
-			//	dSceneNodeInfo* const parentInfo = (dSceneNodeInfo*)scene.GetInfoFromNode (parentNode);
-			//	dAssert (parentInfo->IsType(dSceneNodeInfo::GetRttiType()));
-			//	parentMatrix = parentInfo->GetTransform();
-			//}
-
-
-			dSceneNodeInfo* const sceneInfo = (dSceneNodeInfo*) scene.GetInfoFromNode (sceneNode);
-			//dMatrix matrix (sceneInfo->GetTransform() * parentMatrix.Inverse4x4());
-			dMatrix matrix (sceneInfo->GetTransform());
-			dQuaternion rot (matrix);
-			entity->m_curPosition = matrix.m_posit;
-			entity->m_nextPosition = matrix.m_posit;
-			entity->m_curRotation = rot;
-			entity->m_nextRotation = rot;
-			entity->m_matrix = matrix;
-			entity->SetNameID(sceneInfo->GetName());
-
-			for (void* child = scene.GetFirstChildLink(sceneNode); child; child = scene.GetNextChildLink (sceneNode, child)) {
-				dScene::dTreeNode* const node = scene.GetNodeFromLink(child);
-				dNodeInfo* const nodeInfo = scene.GetInfoFromNode(node);
-
-				if (nodeInfo->GetTypeId() == dMeshNodeInfo::GetRttiType()) {
-					dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* cacheNode = meshDictionary.Find(node);
-					if (!cacheNode) {
-						DemoMeshInterface* const mesh = new DemoMesh(&scene, node);
-						cacheNode = meshDictionary.Insert(mesh, node);
-					}
-					DemoMeshInterface* const mesh = cacheNode->GetInfo();
-					entity->SetMesh(mesh, sceneInfo->GetGeometryTransform());
-
-					// save the modifiers
-					for (void* ptr = scene.GetFirstChildLink(node); ptr; ptr = scene.GetNextChildLink(node, ptr)) {
-						dScene::dTreeNode* const modifierNode = scene.GetNodeFromLink(ptr);
-						dNodeInfo* const modifierInfo = scene.GetInfoFromNode(modifierNode);
-						if (modifierInfo->IsType(dGeometryNodeModifierInfo::GetRttiType())) {
-							nodeModifiers[modifiersCount] = modifierNode;
-							modifiersCount++;
-						}
-					}
-
-				} else if (nodeInfo->GetTypeId() == dLineNodeInfo::GetRttiType()) {
-					dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* cacheNode = meshDictionary.Find(node);
-					if (!cacheNode) {
-						DemoMeshInterface* const mesh = new DemoBezierCurve(&scene, node);
-						cacheNode = meshDictionary.Insert(mesh, node);
-					}
-					DemoMeshInterface* const mesh = cacheNode->GetInfo();
-					entity->SetMesh(mesh, sceneInfo->GetGeometryTransform());
-				}
-			}
-
-			for (void* child = scene.GetFirstChildLink(sceneNode); child; child = scene.GetNextChildLink (sceneNode, child)) {
-				dScene::dTreeNode* const node = scene.GetNodeFromLink(child);
-				dNodeInfo* const info = scene.GetInfoFromNode(node);
-				if (info->IsType(dSceneNodeInfo::GetRttiType())) {
-					nodeStack[stack] = node;
-					entityStack[stack] = new DemoEntity (dGetIdentityMatrix(), entity);
-					stack ++;
-				}
-			}
-		}
-
-		while (meshDictionary.GetCount()) {
-			dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* const node = meshDictionary.GetRoot();
-			DemoMeshInterface* const mesh = node->GetInfo();
-			mesh->Release();
-			meshDictionary.Remove(node);
-		}
-
-		for (int i = 0; i < modifiersCount; i ++) {
-			dScene::dTreeNode* const node = nodeModifiers[i];
-			dNodeInfo* const nodeInfo = scene.GetInfoFromNode(node);
-			if (nodeInfo->GetTypeId() == dGeometryNodeSkinModifierInfo::GetRttiType()) {
-//				dAssert (0);
-				//skinMesh = (dGeometryNodeSkinModifierInfo*)info;
-			}
-		}
-	}
-}
-
-
-
 DemoEntity::UserData* DemoEntity::GetUserData ()
 {
 	return m_userData;
@@ -261,13 +131,18 @@ void DemoEntity::SetUserData (UserData* const data)
 void DemoEntity::TransformCallback(const NewtonBody* body, const dFloat* matrix, int threadIndex)
 {
 	DemoEntity* const ent = (DemoEntity*) NewtonBodyGetUserData(body);
-	
-	DemoEntityManager* const scene = (DemoEntityManager*) NewtonWorldGetUserData(NewtonBodyGetWorld(body));
-	dMatrix transform (matrix);
-	dQuaternion rot (transform);
-	ent->SetMatrix (*scene, rot, transform.m_posit);
-}
+	if (ent) {
+		DemoEntityManager* const scene = (DemoEntityManager*)NewtonWorldGetUserData(NewtonBodyGetWorld(body));
+		dMatrix transform(matrix);
+		//dQuaternion rot1(transform);
+		dQuaternion rot;
+		NewtonBodyGetRotation(body, &rot.m_x);
 
+		scene->Lock(ent->m_lock);
+		ent->SetMatrixUsafe(rot, transform.m_posit);
+		scene->Unlock(ent->m_lock);
+	}
+}
 
 DemoMeshInterface* DemoEntity::GetMesh() const
 {
@@ -324,11 +199,8 @@ dMatrix DemoEntity::CalculateInterpolatedGlobalMatrix (const DemoEntity* const r
 	return matrix;
 }
 
-void DemoEntity::SetMatrix(DemoEntityManager& world, const dQuaternion& rotation, const dVector& position)
+void DemoEntity::SetMatrixUsafe(const dQuaternion& rotation, const dVector& position)
 {
-	// read the data in a critical section to prevent race condition from other thread  
-	world.Lock(m_lock);
-
 	m_curPosition = m_nextPosition;
 	m_curRotation = m_nextRotation;
 
@@ -339,6 +211,14 @@ void DemoEntity::SetMatrix(DemoEntityManager& world, const dQuaternion& rotation
 	if (angle < 0.0f) {
 		m_curRotation.Scale(-1.0f);
 	}
+}
+
+void DemoEntity::SetMatrix(DemoEntityManager& world, const dQuaternion& rotation, const dVector& position)
+{
+	// read the data in a critical section to prevent race condition from other thread  
+	world.Lock(m_lock);
+
+	SetMatrixUsafe(rotation, position);
 
 	// release the critical section
 	world.Unlock(m_lock);
@@ -361,44 +241,61 @@ void DemoEntity::SetNextMatrix (DemoEntityManager& world, const dQuaternion& rot
 	world.Unlock(m_lock);
 }
 
-
-void DemoEntity::ResetMatrix(DemoEntityManager& world, const dMatrix& matrix)
+void DemoEntity::ResetMatrix(DemoEntityManager& scene, const dMatrix& matrix)
 {
 	dQuaternion rot (matrix);
-	SetMatrix(world, rot, matrix.m_posit);
-	SetMatrix(world, rot, matrix.m_posit);
-	InterpolateMatrix (world, 0.0f);
+	SetMatrix(scene, rot, matrix.m_posit);
+	SetMatrix(scene, rot, matrix.m_posit);
+	InterpolateMatrix (scene, 0.0f);
+}
+
+void DemoEntity::InterpolateMatrixUnsafe(dFloat param)
+{
+	dVector p0(m_curPosition);
+	dVector p1(m_nextPosition);
+	dQuaternion r0(m_curRotation);
+	dQuaternion r1(m_nextRotation);
+
+	dVector posit(p0 + (p1 - p0).Scale(param));
+	dQuaternion rotation(r0.Slerp(r1, param));
+	m_matrix = dMatrix(rotation, posit);
+
+	for (DemoEntity* child = GetChild(); child; child = child->GetSibling()) {
+		child->InterpolateMatrixUnsafe(param);
+	}
 }
 
 void DemoEntity::InterpolateMatrix (DemoEntityManager& world, dFloat param)
 {
 	// read the data in a critical section to prevent race condition from other thread  
 	world.Lock(m_lock);
-
-	dVector p0(m_curPosition);
-	dVector p1(m_nextPosition);
-	dQuaternion r0 (m_curRotation);
-	dQuaternion r1 (m_nextRotation);
-
-	// release the critical section
+	InterpolateMatrixUnsafe(param);
 	world.Unlock(m_lock);
-
-	dVector posit (p0 + (p1 - p0).Scale (param));
-	dQuaternion rotation (r0.Slerp(r1, param));
-
-	m_matrix = dMatrix (rotation, posit);
-
-	if (m_userData) {
-		m_userData->OnInterpolateMatrix(world, param);
-	}
 }
-
 
 const dMatrix& DemoEntity::GetRenderMatrix () const
 {
 	return m_matrix;
 }
 
+void DemoEntity::RenderBone() const
+{
+	if (GetParent()) {
+		glDisable(GL_LIGHTING);
+		glDisable(GL_TEXTURE_2D);
+
+		glColor3f(0.5f, 0.5f, 0.5f);
+		glBegin(GL_LINES);
+		for (DemoEntity* child = GetChild(); child; child = child->GetSibling()) {
+			const dVector& posit = child->m_matrix.m_posit;
+			glVertex3f(GLfloat(0.0f), GLfloat(0.0f), GLfloat(0.0f));
+			glVertex3f(GLfloat(posit.m_x), GLfloat(posit.m_y), GLfloat(posit.m_z));
+		}
+
+		glEnd();
+		glEnable(GL_LIGHTING);
+	}
+}
 
 void DemoEntity::Render(dFloat timestep, DemoEntityManager* const scene) const
 {
@@ -409,17 +306,18 @@ void DemoEntity::Render(dFloat timestep, DemoEntityManager* const scene) const
 	glMultMatrix(&m_matrix[0][0]);
 
 	// Render mesh if there is one 
-	if (m_mesh) {
+	if (m_isVisible && m_mesh) {
 		glPushMatrix();
 		glMultMatrix(&m_meshMatrix[0][0]);
 		m_mesh->Render (scene);
-//		m_mesh->RenderNormals ();
-
+		//m_mesh->RenderNormals ();
 		if (m_userData) {
 			m_userData->OnRender(timestep);
 		}
 		glPopMatrix();
 	}
+
+//	RenderBone();
 
 	for (DemoEntity* child = GetChild(); child; child = child->GetSibling()) {
 		child->Render(timestep, scene);
@@ -428,4 +326,218 @@ void DemoEntity::Render(dFloat timestep, DemoEntityManager* const scene) const
 	// restore the matrix before leaving
 	glPopMatrix();
 	
+}
+
+DemoEntity* DemoEntity::LoadNGD_mesh(const char* const fileName, NewtonWorld* const world, const ShaderPrograms& shaderCache)
+{
+	dScene scene(world);
+
+	char pathName[2048];
+	dGetWorkingFileName(fileName, pathName);
+	scene.Deserialize(pathName);
+
+	// this will apply all global the scale to the mesh
+	scene.FreezeScale();
+
+	// this will apply all local scale and transform to the mesh
+	scene.FreezeGeometryPivot();
+
+	int rootCount = 0;
+	dScene::dTreeNode* meshRootNodeArray[256];
+	dScene::dTreeNode* const root = scene.GetRootNode();
+	for (void* child = scene.GetFirstChildLink(root); child; child = scene.GetNextChildLink(root, child)) {
+		dScene::dTreeNode* const sceneNode = scene.GetNodeFromLink(child);
+		dNodeInfo* const nodeInfo = scene.GetInfoFromNode(sceneNode);
+		if (nodeInfo->GetTypeId() == dSceneNodeInfo::GetRttiType()) {
+			meshRootNodeArray[rootCount] = sceneNode;
+			rootCount ++;
+		}
+	}
+
+	dTree<DemoEntity*, dScene::dTreeNode*> boneMap;
+	DemoEntity* returnEntity = NULL;
+	DemoEntity* entity[256];
+	entity[0] = NULL;
+	if (rootCount) {
+		int stack = 0;
+		int modifiersCount = 0;
+		DemoEntity* entityStack[256];
+		dScene::dTreeNode* nodeStack[256];
+		DemoEntity* entityModifiers[256];
+		dScene::dTreeNode* nodeModifiers[256];
+
+		DemoEntity* parent = NULL;
+		if (rootCount > 1) {
+			parent = new DemoEntity(dGetIdentityMatrix(), NULL);
+		}
+		for (int i = 0; i < rootCount; i ++) {
+			entity[stack] = new DemoEntity(dGetIdentityMatrix(), parent);
+			entityStack[stack] = entity[stack];
+			nodeStack[stack] = meshRootNodeArray[stack];
+			stack ++;
+		}
+
+		dTree<DemoMeshInterface*, dScene::dTreeNode*> meshDictionary;
+		while (stack) {
+			stack--;
+
+			DemoEntity* const entity = entityStack[stack];
+			dScene::dTreeNode* sceneNode = nodeStack[stack];
+
+			boneMap.Insert(entity, sceneNode);
+
+			dSceneNodeInfo* const sceneInfo = (dSceneNodeInfo*)scene.GetInfoFromNode(sceneNode);
+			dMatrix matrix(sceneInfo->GetTransform());
+			dQuaternion rot(matrix);
+			entity->m_curPosition = matrix.m_posit;
+			entity->m_nextPosition = matrix.m_posit;
+			entity->m_curRotation = rot;
+			entity->m_nextRotation = rot;
+			entity->m_matrix = matrix;
+			entity->SetNameID(sceneInfo->GetName());
+			const char* const name = entity->GetName().GetStr();
+			if (strstr(name, "Sphere") || strstr(name, "Box") || strstr(name, "Capsule")) {
+				entity->m_isVisible = false;
+				//dTrace(("%s %s\n", name, entity->GetParent()->GetName().GetStr()));
+			}
+
+			for (void* child = scene.GetFirstChildLink(sceneNode); child; child = scene.GetNextChildLink(sceneNode, child)) {
+				dScene::dTreeNode* const meshNode = scene.GetNodeFromLink(child);
+				dNodeInfo* const nodeInfo = scene.GetInfoFromNode(meshNode);
+
+				if (nodeInfo->GetTypeId() == dMeshNodeInfo::GetRttiType()) {
+					dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* cacheNode = meshDictionary.Find(meshNode);
+					if (!cacheNode) {
+						DemoMeshInterface* const mesh = new DemoMesh(&scene, meshNode, shaderCache);
+						cacheNode = meshDictionary.Insert(mesh, meshNode);
+					}
+					DemoMeshInterface* const mesh = cacheNode->GetInfo();
+					entity->SetMesh(mesh, sceneInfo->GetGeometryTransform());
+
+					for (void* modifierChild = scene.GetFirstChildLink(meshNode); modifierChild; modifierChild = scene.GetNextChildLink(sceneNode, modifierChild)) {
+						dScene::dTreeNode* const modifierNode = scene.GetNodeFromLink(modifierChild);
+						dGeometryNodeSkinClusterInfo* const modifierInfo = (dGeometryNodeSkinClusterInfo*)scene.GetInfoFromNode(modifierNode);
+						if (modifierInfo->GetTypeId() == dGeometryNodeSkinClusterInfo::GetRttiType()) {
+							entityModifiers[modifiersCount] = entity;
+							nodeModifiers[modifiersCount] = meshNode;
+							modifiersCount++;
+							break;
+						}
+					}
+
+				} else if (nodeInfo->GetTypeId() == dLineNodeInfo::GetRttiType()) {
+					dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* cacheNode = meshDictionary.Find(meshNode);
+					if (!cacheNode) {
+						DemoMeshInterface* const mesh = new DemoBezierCurve(&scene, meshNode);
+						cacheNode = meshDictionary.Insert(mesh, meshNode);
+					}
+					DemoMeshInterface* const mesh = cacheNode->GetInfo();
+					entity->SetMesh(mesh, sceneInfo->GetGeometryTransform());
+				}
+			}
+
+			for (void* child = scene.GetFirstChildLink(sceneNode); child; child = scene.GetNextChildLink(sceneNode, child)) {
+				dScene::dTreeNode* const node = scene.GetNodeFromLink(child);
+				dNodeInfo* const nodeInfo = scene.GetInfoFromNode(node);
+				if (nodeInfo->IsType(dSceneNodeInfo::GetRttiType())) {
+					nodeStack[stack] = node;
+					entityStack[stack] = new DemoEntity(dGetIdentityMatrix(), entity);
+					stack++;
+				}
+			}
+		}
+
+		while (meshDictionary.GetCount()) {
+			dTree<DemoMeshInterface*, dScene::dTreeNode*>::dTreeNode* const node = meshDictionary.GetRoot();
+			DemoMeshInterface* const mesh = node->GetInfo();
+			mesh->Release();
+			meshDictionary.Remove(node);
+		}
+
+		returnEntity = entity[0] ? (entity[0]->GetParent() ? entity[0]->GetParent() : entity[0]) : NULL;
+		if (modifiersCount) {
+			for (int i = 0; i < modifiersCount; i++) {
+				dScene::dTreeNode* const skinMeshNode = nodeModifiers[i];
+				dAssert (((dMeshNodeInfo*)scene.GetInfoFromNode(skinMeshNode))->GetTypeId() == dMeshNodeInfo::GetRttiType());
+				DemoEntity* const skinEntity = entityModifiers[i];
+				DemoSkinMesh* const skinMesh = new DemoSkinMesh(&scene, skinEntity, skinMeshNode, boneMap, shaderCache);
+				skinEntity->SetMesh(skinMesh, skinEntity->GetMeshMatrix());
+				skinMesh->Release();
+			}
+		}
+	}
+
+	return returnEntity;
+}
+
+NewtonCollision* DemoEntity::CreateCollisionFromchildren(NewtonWorld* const world) const
+{
+	int count = 1;
+	NewtonCollision* shapeArray[128];
+	
+	shapeArray[0] = NULL;
+	for (DemoEntity* child = GetChild(); child; child = child->GetSibling()) {
+		const char* const name = child->GetName().GetStr();
+
+		if (strstr (name, "Sphere")) {
+			DemoMesh* const mesh = (DemoMesh*)child->GetMesh();
+			dAssert(mesh->IsType(DemoMesh::GetRttiType()));
+			// go over the vertex array and find and collect all vertices's weighted by this bone.
+			dFloat* const array = mesh->m_vertex;
+			dVector extremes(0.0f);
+			for (int i = 0; i < mesh->m_vertexCount; i++) {
+				extremes.m_x = dMax(extremes.m_x, array[i * 3 + 0]);
+				extremes.m_y = dMax(extremes.m_y, array[i * 3 + 1]);
+				extremes.m_z = dMax(extremes.m_z, array[i * 3 + 2]);
+			}
+
+			dMatrix matrix(child->GetCurrentMatrix());
+			shapeArray[count] = NewtonCreateSphere(world, extremes.m_x, 0, &matrix[0][0]);
+			count++;
+			dAssert(count < sizeof(shapeArray) / sizeof (shapeArray[0]));
+		} else if (strstr (name, "Box")) {
+			DemoMesh* const mesh = (DemoMesh*)child->GetMesh();
+			dAssert(mesh->IsType(DemoMesh::GetRttiType()));
+			// go over the vertex array and find and collect all vertices's weighted by this bone.
+			dFloat* const array = mesh->m_vertex;
+			dVector extremes(0.0f);
+			for (int i = 0; i < mesh->m_vertexCount; i++) {
+				extremes.m_x = dMax(extremes.m_x, array[i * 3 + 0]);
+				extremes.m_y = dMax(extremes.m_y, array[i * 3 + 1]);
+				extremes.m_z = dMax(extremes.m_z, array[i * 3 + 2]);
+			}
+
+			extremes = extremes.Scale (2.0f); 
+			dMatrix matrix(child->GetCurrentMatrix());
+			shapeArray[count] = NewtonCreateBox(world, extremes.m_x, extremes.m_y, extremes.m_z, 0, &matrix[0][0]);
+			count++;
+			dAssert(count < sizeof(shapeArray) / sizeof (shapeArray[0]));
+
+		} else if (strstr (name, "Capsule")) {
+			DemoMesh* const mesh = (DemoMesh*)child->GetMesh();
+			dAssert(mesh->IsType(DemoMesh::GetRttiType()));
+			// go over the vertex array and find and collect all vertices's weighted by this bone.
+			dFloat* const array = mesh->m_vertex;
+			dVector extremes(0.0f);
+			for (int i = 0; i < mesh->m_vertexCount; i++) {
+				extremes.m_x = dMax(extremes.m_x, array[i * 3 + 0]);
+				extremes.m_y = dMax(extremes.m_y, array[i * 3 + 1]);
+				extremes.m_z = dMax(extremes.m_z, array[i * 3 + 2]);
+			}
+			dFloat high = 2.0f * dMax (extremes.m_y - extremes.m_x, dFloat (0.0f));
+
+			dMatrix alighMatrix(dRollMatrix(90.0f * dDegreeToRad));
+			dMatrix matrix (alighMatrix * child->GetCurrentMatrix());
+			shapeArray[count] = NewtonCreateCapsule(world, extremes.m_x, extremes.m_x, high, 0, &matrix[0][0]);
+			count++;
+			dAssert(count < sizeof(shapeArray)/ sizeof (shapeArray[0]));
+		} 
+	}
+
+	if (count > 2) {
+		dAssert(0);
+	} if (count == 2) {
+		shapeArray[0] = shapeArray[1];
+	}
+	return shapeArray[0];
 }

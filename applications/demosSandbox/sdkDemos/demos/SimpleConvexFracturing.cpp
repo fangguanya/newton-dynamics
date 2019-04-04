@@ -9,7 +9,7 @@
 * freely
 */
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "SkyBox.h"
 #include "TargaToOpenGl.h"
 #include "DemoMesh.h"
@@ -267,6 +267,8 @@ class DelaunayEffect: public FractureEffect
 		NewtonMesh* const debriMeshPieces = NewtonMeshCreateTetrahedraIsoSurface(mesh);
 		dAssert(debriMeshPieces);
 
+		DemoEntityManager* const scene = (DemoEntityManager*)NewtonWorldGetUserData(world);
+
 		// now we iterate over each pieces and for each one we create a visual entity and a rigid body
 		NewtonMesh* nextDebri;
 		for (NewtonMesh* debri = NewtonMeshCreateFirstLayer(debriMeshPieces); debri; debri = nextDebri) {
@@ -278,7 +280,7 @@ class DelaunayEffect: public FractureEffect
 			if (collision) {
 				// we have a piece which has a convex collision  representation, add that to the list
 				FractureAtom& atom = Append()->GetInfo();
-				atom.m_mesh = new DemoMesh(debri);
+				atom.m_mesh = new DemoMesh(debri, scene->GetShaderCache());
 				atom.m_collision = collision;
 				NewtonConvexCollisionCalculateInertialMatrix(atom.m_collision, &atom.m_momentOfInirtia[0], &atom.m_centerOfMass[0]);
 				dFloat debriVolume = NewtonConvexCollisionCalculateVolume(atom.m_collision);
@@ -302,12 +304,14 @@ class DelaunayEffect: public FractureEffect
 		// apply a material map
 		int externalMaterial = LoadTexture("reljef.tga");
 		int internalMaterial = LoadTexture("concreteBrick.tga");
-		NewtonMeshApplyBoxMapping(mesh, externalMaterial, externalMaterial, externalMaterial);
+		dMatrix aligmentUV(dGetIdentityMatrix());
+
+		NewtonMeshApplyBoxMapping(mesh, externalMaterial, externalMaterial, externalMaterial, &aligmentUV[0][0]);
 
 		// create a newton mesh from the collision primitive
 		DelaunayEffect fracture(world, mesh, internalMaterial);
 
-		DemoMesh* const visualMesh = new DemoMesh(mesh);
+		DemoMesh* const visualMesh = new DemoMesh(mesh, scene->GetShaderCache());
 
 		dFloat startElevation = 100.0f;
 		dMatrix matrix(dGetIdentityMatrix());
@@ -351,9 +355,9 @@ class VoronoidEffect: public FractureEffect
 		int count = 0;
 		// pepper the inside of the BBox box of the mesh with random points
 		while (count < NUMBER_OF_INTERNAL_PARTS) {
-			dFloat x = dRandomVariable(size.m_x);
-			dFloat y = dRandomVariable(size.m_y);
-			dFloat z = dRandomVariable(size.m_z);
+			dFloat x = dGaussianRandom (size.m_x);
+			dFloat y = dGaussianRandom (size.m_y);
+			dFloat z = dGaussianRandom (size.m_z);
 			if ((x <= size.m_x) && (x >= -size.m_x) && (y <= size.m_y) && (y >= -size.m_y) && (z <= size.m_z) && (z >= -size.m_z)) {
 				points[count] = dVector(x, y, z);
 				count++;
@@ -386,6 +390,8 @@ class VoronoidEffect: public FractureEffect
 		NewtonMesh* const debriMeshPieces = NewtonMeshCreateVoronoiConvexDecomposition(m_world, count, &points[0].m_x, sizeof (dVector), interiorMaterial, &textureMatrix[0][0]);
 		dAssert(debriMeshPieces);
 
+		DemoEntityManager* const scene = (DemoEntityManager*)NewtonWorldGetUserData(world);
+
 		// now we iterate over each pieces and for each one we create a visual entity and a rigid body
 		NewtonMesh* nextDebri;
 		for (NewtonMesh* debri = NewtonMeshCreateFirstLayer(debriMeshPieces); debri; debri = nextDebri) {
@@ -400,7 +406,7 @@ class VoronoidEffect: public FractureEffect
 				if (collision) {
 					// we have a piece which has a convex collision  representation, add that to the list
 					FractureAtom& atom = Append()->GetInfo();
-					atom.m_mesh = new DemoMesh(fracturePiece);
+					atom.m_mesh = new DemoMesh(fracturePiece, scene->GetShaderCache());
 					atom.m_collision = collision;
 					NewtonConvexCollisionCalculateInertialMatrix(atom.m_collision, &atom.m_momentOfInirtia[0], &atom.m_centerOfMass[0]);
 					dFloat debriVolume = NewtonConvexCollisionCalculateVolume(atom.m_collision);
@@ -428,12 +434,14 @@ class VoronoidEffect: public FractureEffect
 		int externalMaterial = LoadTexture("reljef.tga");
 		//int internalMaterial = LoadTexture("KAMEN-stup.tga");
 		int internalMaterial = LoadTexture("concreteBrick.tga");
-		NewtonMeshApplyBoxMapping(mesh, externalMaterial, externalMaterial, externalMaterial);
+
+		dMatrix aligmentUV(dGetIdentityMatrix());
+		NewtonMeshApplyBoxMapping(mesh, externalMaterial, externalMaterial, externalMaterial, &aligmentUV[0][0]);
 
 		// create a newton mesh from the collision primitive
 		VoronoidEffect fracture(world, mesh, internalMaterial);
 
-		DemoMesh* const visualMesh = new DemoMesh(mesh);
+		DemoMesh* const visualMesh = new DemoMesh(mesh, scene->GetShaderCache());
 
 		dFloat startElevation = 100.0f;
 		dMatrix matrix(dGetIdentityMatrix());

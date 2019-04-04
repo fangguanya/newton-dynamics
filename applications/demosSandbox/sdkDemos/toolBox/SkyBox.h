@@ -17,7 +17,7 @@
 #ifndef __SKY_BOX_H_
 #define __SKY_BOX_H_
 
-#include <toolbox_stdafx.h>
+#include "toolbox_stdafx.h"
 #include "../DemoEntity.h"
 
 class DemoEntityManager;
@@ -25,15 +25,17 @@ class DemoEntityManager;
 class SkyBox: public DemoEntity
 {
 	public:
-	SkyBox();
+	SkyBox(GLuint shader);
 	~SkyBox();
 
 	virtual void Render(dFloat timeStep, DemoEntityManager* const scene) const;
 
 	private:
-	dVector m_size;
-	GLuint m_textures[6];
+	void DrawMesh () const;
 
+	GLuint m_displayList;
+	GLuint m_shader;
+	GLuint m_textures[6];
 };
 
 #endif 
